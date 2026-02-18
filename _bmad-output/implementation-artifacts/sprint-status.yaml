@@ -1,0 +1,76 @@
+# generated: 2026-02-17
+# project: reekon
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Mark epic as 'in-progress' when starting work on its first story
+# - SM typically creates next story ONLY after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then Dev runs code-review (fresh context, ideally different LLM)
+
+generated: 2026-02-17
+project: reekon
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1: Fondation du Projet & Authentification
+  epic-1: in-progress
+  1-1-initialisation-du-projet-et-infrastructure: done
+  1-2-inscription-et-connexion-via-otp-email: done
+  1-3-deconnexion: done
+  1-4-suppression-de-compte-et-donnees: done
+  epic-1-retrospective: optional
+
+  # Epic 2: Import & Prévisualisation de Fichiers
+  epic-2: done
+  2-1-upload-de-deux-fichiers: done
+  2-2-parsing-intelligent-multi-format: done
+  2-3-previsualisation-des-donnees-importees: done
+  epic-2-retrospective: optional
+
+  # Epic 3: Moteur de Rapprochement
+  epic-3: done
+  3-1-configuration-des-colonnes-et-cles-de-rapprochement: done
+  3-2-options-de-nettoyage-et-deduplication: done
+  3-3-moteur-de-rapprochement-bidirectionnel: done
+  epic-3-retrospective: optional
+
+  # Epic 4: Dashboard Résultats & Export Excel
+  epic-4: done
+  4-1-dashboard-de-synthese-des-resultats: done
+  4-2-tableaux-de-detail-des-ecarts-et-lignes-uniques: done
+  4-3-generation-et-telechargement-du-rapport-excel: done
+  epic-4-retrospective: optional
+
+  # Epic 5: Gestion des Modèles de Rapprochement
+  epic-5: in-progress
+  5-1-sauvegarde-dun-modele-de-rapprochement: review
+  5-2-liste-et-application-des-modeles-sauvegardes: review
+  5-3-modification-et-suppression-de-modeles: review
+  epic-5-retrospective: optional

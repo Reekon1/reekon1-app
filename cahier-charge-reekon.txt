@@ -1,0 +1,125 @@
+Cahier des charges V2
+Cahier des Charges : Projet &quot;Reekon&quot;
+(Version 2.0)
+1. Vision et Objectif
+● Nom du Projet : Reekon
+● Cible : Comptables, Experts-Comptables, DAF.
+● Objectif : Service SaaS de rapprochement universel permettant de comparer deux
+flux de données hétérogènes pour identifier les doublons, les écarts de réconciliation
+et les anomalies de montants.
+2. Philosophie d&#39;Architecture : Du Statique au
+Modulaire
+L&#39;application ne doit plus être &quot;hardcodée&quot; pour Fichier 1 vs Fichier 2. Elle doit passer d&#39;une
+logique fixe à un moteur de règles dynamique:
+● Agnosticisme logicielle : Capacité à traiter n&#39;importe quel export (Système A vs
+Système B).
+● Moteur de Mapping : L&#39;utilisateur définit lui-même ses clés (uniques ou composites)
+via une interface dédiée.
+● Persistance des configurations : Possibilité d&#39;enregistrer ces &quot;Modèles de
+rapprochement&quot; pour un uFichier 1 récurrent.
+3. Périmètre Fonctionnel - Application (Logué)
+3.1. Gestion des Utilisateurs &amp; Dashboard
+● Authentification : SSO (Google, Microsoft, LinkedIn) et Email/OTP.
+● Historique : Accès aux analyses passées avec métriques de succès (ex: &quot;X écarts
+trouvés&quot;).
+● Gestion des Crédits : Affichage en temps réel des analyses restantes selon le
+plan.
+3.2. Flux de Rapprochement (Cœur du Système)
+Phase 1 : Ingestion Flexible
+● Multi-formats : Support impératif de .xlsx, .xls, .csv et .txt.
+● Parsing Intelligent : Détection automatique du séparateur (tabulation, point-virgule,
+etc.).
+● Interface de Mapping : * Sélection manuelle des colonnes pivots.
+○ Création de clés composites par concaténation (ex: N° facture + Tiers +
+Date + Montant).
+
+○ IA Support : Intégration d&#39;un assistant IA pour préconiser les meilleures clés
+de rapprochement selon les en-têtes détectés.
+
+Phase 2 : Nettoyage &amp; Validation
+● Nettoyage Paramétrable : L&#39;utilisateur peut définir des lignes à exclure (en-
+tête/pied de page) directement dans l&#39;interface.
+● Déduplication Dynamique : Basée sur les clés définies en Phase 1 (unique ou
+composite).
+● Contrôle Qualité : Identification des lignes avec identifiants manquants (reporting
+sans suppression).
+Phase 3 : Analyse des Écarts
+● Rapprochement Bidirectionnel : Identification des &quot;Uniques Système A&quot; et
+&quot;Uniques Système B&quot;.
+● Analyse de Variance : Nouveau module pour faire ressortir les écarts de
+montants sur des clés pourtant identiques.
+3.3. Livrables &amp; Rapports
+● Synthèse Textuelle : Résumé des métriques (doublons, erreurs de qualité, écarts
+de réconciliation, écarts de montants).
+● Fichier Excel Détaillé : * Onglet 1 : Écarts système A.
+○ Onglet 2 : Écarts système B.
+○ Note : L&#39;utilisateur doit pouvoir choisir d&#39;exporter tous les champs ou
+seulement une sélection.
+
+4. Logique Métier et Sécurité (RGPD)
+● Éphémérité des données : Destruction immédiate des fichiers sources après
+traitement.
+● Stockage des Rapports : Conservation sécurisée des résultats Excel selon la
+durée définie par le plan (24h à 1 an).
+5. Stack Technique Préconisée
+● Backend : Supabase (Auth, DB, Storage).
+● Traitement : Edge Functions (ou service externe type Lambda pour les gros
+volumes) pour le traitement asynchrone.
+● Paiement : Stripe Billing Portal.
+● Frontend : Next.js optimisé pour la manipulation de données complexes
+(Cursor/Vercel).
+
+US #1 : Rapprochement via Clé Simple (ID Direct)
+
+En tant que comptable,
+Je veux sélectionner une colonne unique dans chacun de mes deux fichiers (ex: &quot;id_doc&quot; vs
+&quot;Identifiant&quot;),
+Afin de réconcilier mes données sans manipulation préalable.
+Critères d&#39;acceptation :
+● Sélection UI : L&#39;utilisateur peut choisir via un menu déroulant une colonne du Fichier
+1 et une colonne du Fichier 2.
+● Moteur de calcul : Le système compare les valeurs brutes de ces deux colonnes.
+● Rapport de synthèse : Générer les statistiques &quot;Uniques Fichier 1&quot; et &quot;Uniques
+Fichier 2&quot; basées sur ce mapping.
+● Export Excel : Les lignes non trouvées sont isolées dans des onglets dédiés
+(&quot;Écarts Fichier 1&quot;, &quot;Écarts Fichier 2&quot;).
+
+US #2 : Rapprochement via Clé Composite
+(Concaténation)
+En tant que comptable,
+Je veux créer une clé de rapprochement en combinant plusieurs colonnes (ex: Montant +
+Date + N° Facture),
+Afin de réconcilier des systèmes qui n&#39;ont pas d&#39;identifiant technique commun.
+Critères d&#39;acceptation :
+● Constructeur de clé : L&#39;UI permet de sélectionner plusieurs colonnes dans l&#39;ordre
+souhaité pour chaque fichier.
+● Normalisation : Le système doit &quot;nettoyer&quot; les données avant concaténation (ex:
+transformer les dates au même format, supprimer les espaces dans les montants).
+● Calcul de la Clé Pivot : Générer une clé temporaire type
+VALEUR1_VALEUR2_VALEUR3 pour effectuer la jointure.
+● Précision : Le rapport doit confirmer quelles colonnes ont servi à la construction de
+la clé.
+
+US #3 : Analyse de Qualité et Déduplication
+En tant que Tech Lead (Expert métier),
+Je veux que le système nettoie les données avant le rapprochement,
+Afin de garantir la fiabilité du rapport final.
+Critères d&#39;acceptation :
+
+● Détection des doublons : Identifier et supprimer les doublons au sein d&#39;un même
+fichier selon la clé définie (Simple ou Composite).
+● Vérification de complétude : Identifier les lignes où la &quot;Clé de rapprochement&quot; est
+vide ou nulle.
+● Reporting d&#39;intégrité : Afficher clairement dans le résumé : &quot;X doublons supprimés&quot;
+et &quot;Y lignes inexploitables&quot;.
+
+US #4 : Dashboard de Synthèse Exécutive
+En tant que DAF,
+Je veux visualiser un résumé chiffré après le traitement,
+Afin de mesurer d&#39;un coup d&#39;œil le taux de fiabilité de ma comptabilité.
+Critères d&#39;acceptation :
+● Résumé Exécutif : Affichage du nombre de correspondances et des éléments
+uniques.
+● Visualisation : Affichage du &quot;Taux de correspondance global&quot; en pourcentage.
+● Alertes : Utiliser des indicateurs visuels (Vert/Orange/Rouge) pour les erreurs de
+qualité ou les écarts importants.

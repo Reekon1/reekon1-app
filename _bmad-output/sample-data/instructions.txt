@@ -1,0 +1,78 @@
+Tu trouveras en PJ les fichiers suivants :
+
+Synthèse Réconciliation :
+Mes résultats après analyse Excel
+Colonage des informations attendues
+Listing des champs qui une fois concaténé permettent de définir une clé unique.
+Fichier ZEENDOC au format *.xlsxs
+Fichier SAGE au format *.csv
+Ce sont les format exportés tels quels, sans être retravaillés
+
+
+
+
+Clé unique inter système :
+
+Les 2 fichiers contiennent une clé unique (entre les 2 systèmes) qui se trouve :
+
+Dans le fichier ZEENDOC en colonne A (Identifiant)
+Dans le fichier SAGE en colonne AF (Id_dl)
+Analyse plutôt simple.
+
+
+
+
+Second critère de rapprochement : Création d’une clé à partir de la concaténation de plusieurs champs
+
+Le second contrôle qui peut être fait et qui est intéressant est de cadrer sur la concaténation de plusieurs champs :
+
+N° de facture
+Date
+Code Fournisseur
+Montant
+
+
+Mais l’encodage est différent entre les 2 systèmes. Dans Excel, je ne peux pas le faire du fait de ce soucis de l’encodage.
+
+Exemple ‘N°’ dans ZEENDOC se traduit par ‘N’ dans SAGE
+
+
+Ci-dessous le détail des champs :
+
+
+
+N° de Facture
+Dans ZEENDOC c’est la colonne E
+Dans SAGE c’est la colonne N
+Mon soucis c’est l’encodage entre les fichiers
+Nativement j’ai peu de réconciliation par rapport à la clé
+
+
+Date : C’est le même format, mais peut être prévoir le fait que ce ne soit pas les mêmes (ou à la main de l’utilisateur)
+Dans ZEENDOC c’est la colonne G
+Dans SAGE c’est la colonne E
+
+
+Code Fournisseur :
+Dans ZEENDOC : C’est la colonne Q
+Particularité ZEENDOC (Dans ce cas de figure) : Les données sont parfois identiques dans SAGE et dans ZEENDOC et parfois non.
+SAGE ressort le code
+ZEENDOC ressort le code – le libellé…
+Exemple : CNFFOKTOS – OKTOS au lieu de CNFFOKTOS (Code – libellé, là ou côté SAGE je n’ai que le code…)
+Dans SAGE : C’est la colonne A
+Est-ce possible de faire une correspondance entre les 2 ?
+
+
+Montant :
+Dans ZEENDOC c’est la colonne I
+Dans SAGE c’est la colonne H
+Il faut prendre la valeur ABS des montants (sans signe -)
+
+
+Questions :
+
+L’encodage n’est pas le même entre les fichiers : est ce jouable d’uniformiser l’encodage dans le contrôle des factures afin de gagner en réconciliation ?
+J’ai par exemple des retours chariots dans le fichier ZEENDOC que je n’ai pas dans SAGE
+
+
+L’idée sera d’avoir au moins le même résultat entre la clé unique et la clé reconstitué (si cela est possible). Ça nous permettrait de palier au fichiers qui n’ont pas de clé unique (vrai valeur ajoutée)
