@@ -1,6 +1,6 @@
 # Story 5.3: Modification et Suppression de Modèles
 
-Status: review
+Status: done
 
 ## Story
 

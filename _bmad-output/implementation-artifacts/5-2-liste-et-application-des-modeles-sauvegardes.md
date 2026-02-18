@@ -1,6 +1,6 @@
 # Story 5.2: Liste et Application des Modèles Sauvegardés
 
-Status: review
+Status: done
 
 ## Story
 

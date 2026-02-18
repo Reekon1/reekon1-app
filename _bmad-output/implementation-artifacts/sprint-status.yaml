@@ -40,7 +40,7 @@ story_location: _bmad-output/implementation-artifacts
 
 development_status:
   # Epic 1: Fondation du Projet & Authentification
-  epic-1: in-progress
+  epic-1: done
   1-1-initialisation-du-projet-et-infrastructure: done
   1-2-inscription-et-connexion-via-otp-email: done
   1-3-deconnexion: done
@@ -69,8 +69,8 @@ development_status:
   epic-4-retrospective: optional
 
   # Epic 5: Gestion des Modèles de Rapprochement
-  epic-5: in-progress
-  5-1-sauvegarde-dun-modele-de-rapprochement: review
-  5-2-liste-et-application-des-modeles-sauvegardes: review
-  5-3-modification-et-suppression-de-modeles: review
+  epic-5: done
+  5-1-sauvegarde-dun-modele-de-rapprochement: done
+  5-2-liste-et-application-des-modeles-sauvegardes: done
+  5-3-modification-et-suppression-de-modeles: done
   epic-5-retrospective: optional
