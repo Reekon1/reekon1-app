@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect, Suspense } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { FileUploader } from "@/components/reconcile/file-uploader";
-import { DataPreview } from "@/components/reconcile/data-preview";
-import { ConfigureStep } from "@/components/reconcile/configure-step";
+import { Stepper } from "@/components/reconcile/stepper";
+import { UploadStep } from "@/components/reconcile/upload-step";
+import { ScopeStep } from "@/components/reconcile/scope-step";
+import { ColumnsStep, type ColumnsConfig } from "@/components/reconcile/columns-step";
 import { ResultsDashboard } from "@/components/reconcile/results-dashboard";
-import { Button } from "@/components/ui/button";
 import { parseFile } from "@/lib/reconciliation/parser";
 import { reconcile } from "@/lib/reconciliation/engine";
 import { getTemplate } from "@/lib/actions/templates";
@@ -19,7 +19,11 @@ import {
   type ReconciliationResult,
 } from "@/lib/reconciliation/types";
 
-type Step = "upload" | "configure" | "results";
+const STEPS = [
+  { label: "Upload", description: "Importer les fichiers" },
+  { label: "Scope", description: "En-têtes et nettoyage" },
+  { label: "Colonnes", description: "Clés et montants" },
+];
 
 interface FileState {
   file: File | null;
@@ -42,13 +46,27 @@ function ReconcilePageInner() {
   const searchParams = useSearchParams();
   const templateId = searchParams.get("template");
 
-  const [step, setStep] = useState<Step>("upload");
+  // Step management
+  const [currentStep, setCurrentStep] = useState(0);
+  const [showResults, setShowResults] = useState(false);
+
+  // File state
   const [fileA, setFileA] = useState<FileState>(initialFileState);
   const [fileB, setFileB] = useState<FileState>(initialFileState);
+
+  // Scope state (lifted from configure-step)
+  const [excludeFooterA, setExcludeFooterA] = useState(0);
+  const [excludeFooterB, setExcludeFooterB] = useState(0);
+  const [deduplication, setDeduplication] = useState(false);
+
+  // Reconciliation state
   const [isReconciling, setIsReconciling] = useState(false);
   const [result, setResult] = useState<ReconciliationResult | null>(null);
   const [lastConfig, setLastConfig] = useState<ReconciliationConfig | null>(null);
   const [templateConfig, setTemplateConfig] = useState<TemplateConfig | null>(null);
+
+  // Track headers to detect changes and reset columns config
+  const prevHeadersRef = useRef<string>("");
 
   // Load template if query param present
   useEffect(() => {
@@ -75,6 +93,28 @@ function ReconcilePageInner() {
     if (!templateConfig || !parsedA || !parsedB) return null;
     return fromTemplateConfig(templateConfig, parsedA.headers, parsedB.headers);
   }, [templateConfig, parsedA, parsedB]);
+
+  // Apply template scope values
+  useEffect(() => {
+    if (appliedTemplate) {
+      setExcludeFooterA(appliedTemplate.config.excludeFooterRowsA);
+      setExcludeFooterB(appliedTemplate.config.excludeFooterRowsB);
+      setDeduplication(appliedTemplate.config.deduplication);
+    }
+  }, [appliedTemplate]);
+
+  // Track header changes — reset columns step key when headers change
+  const [columnsKey, setColumnsKey] = useState(0);
+  useEffect(() => {
+    if (parsedA && parsedB) {
+      const headersSignature = parsedA.headers.join("\0") + "||" + parsedB.headers.join("\0");
+      if (prevHeadersRef.current && prevHeadersRef.current !== headersSignature) {
+        // Headers changed — force remount of ColumnsStep
+        setColumnsKey((k) => k + 1);
+      }
+      prevHeadersRef.current = headersSignature;
+    }
+  }, [parsedA, parsedB]);
 
   const handleFileSelect = useCallback(
     async (key: "A" | "B", file: File) => {
@@ -103,11 +143,24 @@ function ReconcilePageInner() {
   const handleFileRemove = useCallback((key: "A" | "B") => {
     const setter = key === "A" ? setFileA : setFileB;
     setter(initialFileState);
+    setCurrentStep(0);
+    setExcludeFooterA(0);
+    setExcludeFooterB(0);
+    setDeduplication(false);
   }, []);
 
   const handleReconcile = useCallback(
-    async (config: ReconciliationConfig) => {
+    async (columnsConfig: ColumnsConfig) => {
       if (!parsedA || !parsedB) return;
+
+      const config: ReconciliationConfig = {
+        ...columnsConfig,
+        excludeHeaderRowsA: 0,
+        excludeHeaderRowsB: 0,
+        excludeFooterRowsA: excludeFooterA,
+        excludeFooterRowsB: excludeFooterB,
+        deduplication,
+      };
 
       setIsReconciling(true);
       try {
@@ -115,39 +168,34 @@ function ReconcilePageInner() {
         const res = reconcile(parsedA, parsedB, config);
         setResult(res);
         setLastConfig(config);
-        setStep("results");
+        setShowResults(true);
       } catch (err) {
         console.error("Reconciliation error:", err);
       } finally {
         setIsReconciling(false);
       }
     },
-    [parsedA, parsedB]
+    [parsedA, parsedB, excludeFooterA, excludeFooterB, deduplication]
   );
 
-  const bothParsed = parsedA && parsedB;
-  const isLoading = fileA.isLoading || fileB.isLoading;
+  const handleNewReconciliation = useCallback(() => {
+    setResult(null);
+    setLastConfig(null);
+    setTemplateConfig(null);
+    setFileA(initialFileState);
+    setFileB(initialFileState);
+    setCurrentStep(0);
+    setShowResults(false);
+    setExcludeFooterA(0);
+    setExcludeFooterB(0);
+    setDeduplication(false);
+    if (templateId) {
+      router.replace("/protected/reconcile");
+    }
+  }, [templateId, router]);
 
-  // --- Configure step ---
-  if (step === "configure" && parsedA && parsedB) {
-    return (
-      <div className="flex-1 w-full flex flex-col gap-8 max-w-5xl mx-auto p-5">
-        <ConfigureStep
-          key={templateId ?? "default"}
-          fileA={parsedA}
-          fileB={parsedB}
-          onSubmit={handleReconcile}
-          onBack={() => setStep("upload")}
-          isLoading={isReconciling}
-          initialConfig={appliedTemplate?.config}
-          warnings={appliedTemplate?.warnings}
-        />
-      </div>
-    );
-  }
-
-  // --- Results step ---
-  if (step === "results" && result && parsedA && parsedB && lastConfig) {
+  // --- Results: full page, no stepper ---
+  if (showResults && result && parsedA && parsedB && lastConfig) {
     return (
       <div className="flex-1 w-full flex flex-col gap-8 max-w-5xl mx-auto p-5">
         <ResultsDashboard
@@ -155,86 +203,81 @@ function ReconcilePageInner() {
           fileA={parsedA}
           fileB={parsedB}
           config={lastConfig}
-          onNewReconciliation={() => {
-            setResult(null);
-            setLastConfig(null);
-            setTemplateConfig(null);
-            setFileA(initialFileState);
-            setFileB(initialFileState);
-            setStep("upload");
-            if (templateId) {
-              router.replace("/protected/reconcile");
-            }
-          }}
+          onNewReconciliation={handleNewReconciliation}
         />
       </div>
     );
   }
 
-  // --- Upload step ---
+  // --- Stepper layout ---
+  const stepContent = (() => {
+    switch (currentStep) {
+      case 0:
+        return (
+          <UploadStep
+            fileA={fileA}
+            fileB={fileB}
+            onFileSelect={handleFileSelect}
+            onFileRemove={handleFileRemove}
+            onNext={() => setCurrentStep(1)}
+            hasTemplate={!!templateConfig}
+          />
+        );
+      case 1:
+        if (!fileA.raw || !fileB.raw) return null;
+        return (
+          <ScopeStep
+            rawA={fileA.raw}
+            rawB={fileB.raw}
+            headerRowIndexA={fileA.headerRowIndex}
+            headerRowIndexB={fileB.headerRowIndex}
+            onHeaderRowChangeA={(i) =>
+              setFileA((prev) => ({ ...prev, headerRowIndex: i }))
+            }
+            onHeaderRowChangeB={(i) =>
+              setFileB((prev) => ({ ...prev, headerRowIndex: i }))
+            }
+            excludeFooterA={excludeFooterA}
+            excludeFooterB={excludeFooterB}
+            onExcludeFooterChangeA={setExcludeFooterA}
+            onExcludeFooterChangeB={setExcludeFooterB}
+            deduplication={deduplication}
+            onDeduplicationChange={setDeduplication}
+            onBack={() => setCurrentStep(0)}
+            onNext={() => setCurrentStep(2)}
+          />
+        );
+      case 2:
+        if (!parsedA || !parsedB) return null;
+        return (
+          <ColumnsStep
+            key={`${templateId ?? "default"}-${columnsKey}`}
+            fileA={parsedA}
+            fileB={parsedB}
+            onSubmit={handleReconcile}
+            onBack={() => setCurrentStep(1)}
+            isLoading={isReconciling}
+            initialConfig={appliedTemplate?.config}
+            warnings={appliedTemplate?.warnings}
+          />
+        );
+      default:
+        return null;
+    }
+  })();
+
   return (
-    <div className="flex-1 w-full flex flex-col gap-8 max-w-5xl mx-auto p-5">
-      <div>
-        <h1 className="font-bold text-2xl">Nouveau rapprochement</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {templateConfig
-            ? "Importez vos fichiers — la configuration du modèle sera appliquée automatiquement"
-            : "Importez vos deux fichiers pour commencer le rapprochement"}
-        </p>
-      </div>
+    <div className="flex-1 w-full flex flex-col gap-6 max-w-6xl mx-auto p-5">
+      <h1 className="font-bold text-2xl">Nouveau rapprochement</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <FileUploader
-          label="Fichier Système A"
-          file={fileA.file}
-          onFileSelect={(f) => handleFileSelect("A", f)}
-          onFileRemove={() => handleFileRemove("A")}
-          error={fileA.error}
-          isLoading={fileA.isLoading}
+      <div className="flex gap-8">
+        <Stepper
+          steps={STEPS}
+          currentStep={currentStep}
+          onStepClick={(i) => setCurrentStep(i)}
         />
-        <FileUploader
-          label="Fichier Système B"
-          file={fileB.file}
-          onFileSelect={(f) => handleFileSelect("B", f)}
-          onFileRemove={() => handleFileRemove("B")}
-          error={fileB.error}
-          isLoading={fileB.isLoading}
-        />
+        <div className="flex-1 min-w-0">{stepContent}</div>
       </div>
-
-      {(fileA.raw || fileB.raw) && (
-        <div className="flex flex-col gap-6">
-          <h2 className="font-semibold text-lg">Prévisualisation</h2>
-          {fileA.raw && (
-            <DataPreview
-              raw={fileA.raw}
-              label={`Système A — ${fileA.raw.fileName}`}
-              headerRowIndex={fileA.headerRowIndex}
-              onHeaderRowChange={(i) =>
-                setFileA((prev) => ({ ...prev, headerRowIndex: i }))
-              }
-            />
-          )}
-          {fileB.raw && (
-            <DataPreview
-              raw={fileB.raw}
-              label={`Système B — ${fileB.raw.fileName}`}
-              headerRowIndex={fileB.headerRowIndex}
-              onHeaderRowChange={(i) =>
-                setFileB((prev) => ({ ...prev, headerRowIndex: i }))
-              }
-            />
-          )}
-        </div>
-      )}
-
-      {bothParsed && (
-        <div className="flex justify-end">
-          <Button onClick={() => setStep("configure")} disabled={isLoading}>
-            Continuer
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
