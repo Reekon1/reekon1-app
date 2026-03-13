@@ -4,8 +4,6 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import {
   Card,
   CardContent,
@@ -13,15 +11,29 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { ParsedFile, ReconciliationConfig, KeyTransform } from "@/lib/reconciliation/types";
+import type { ParsedFile, KeyTransform } from "@/lib/reconciliation/types";
 
-interface ConfigureStepProps {
+export interface ColumnsConfig {
+  keyColumnsA: number[];
+  keyColumnsB: number[];
+  amountColumnA: number | null;
+  amountColumnB: number | null;
+  keyTransforms?: KeyTransform[];
+}
+
+interface ColumnsStepProps {
   fileA: ParsedFile;
   fileB: ParsedFile;
-  onSubmit: (config: ReconciliationConfig) => void;
+  onSubmit: (config: ColumnsConfig) => void;
   onBack: () => void;
   isLoading: boolean;
-  initialConfig?: ReconciliationConfig;
+  initialConfig?: {
+    keyColumnsA: number[];
+    keyColumnsB: number[];
+    amountColumnA: number | null;
+    amountColumnB: number | null;
+    keyTransforms?: KeyTransform[];
+  };
   warnings?: string[];
 }
 
@@ -227,7 +239,7 @@ function SpreadsheetPreview({
   );
 }
 
-export function ConfigureStep({
+export function ColumnsStep({
   fileA,
   fileB,
   onSubmit,
@@ -235,7 +247,7 @@ export function ConfigureStep({
   isLoading,
   initialConfig,
   warnings,
-}: ConfigureStepProps) {
+}: ColumnsStepProps) {
   const [keyPairs, setKeyPairs] = useState<KeyPair[]>(() => {
     if (initialConfig) {
       return initialConfig.keyColumnsA.map((colA, i) => ({
@@ -252,9 +264,6 @@ export function ConfigureStep({
   const [amountColB, setAmountColB] = useState<number | null>(
     initialConfig?.amountColumnB ?? null
   );
-  const [excludeFooterA, setExcludeFooterA] = useState(initialConfig?.excludeFooterRowsA ?? 0);
-  const [excludeFooterB, setExcludeFooterB] = useState(initialConfig?.excludeFooterRowsB ?? 0);
-  const [deduplication, setDeduplication] = useState(initialConfig?.deduplication ?? false);
   const [error, setError] = useState<string | null>(null);
   const [activeSelection, setActiveSelection] = useState<ActiveSelection>(null);
 
@@ -328,16 +337,11 @@ export function ConfigureStep({
     const transforms = keyPairs.map((p) => p.transform);
     const hasNonDefault = transforms.some((t) => t !== "default");
 
-    const config: ReconciliationConfig = {
+    const config: ColumnsConfig = {
       keyColumnsA: keyPairs.map((p) => p.colA),
       keyColumnsB: keyPairs.map((p) => p.colB),
       amountColumnA: amountColA,
       amountColumnB: amountColB,
-      excludeHeaderRowsA: 0,
-      excludeHeaderRowsB: 0,
-      excludeFooterRowsA: excludeFooterA,
-      excludeFooterRowsB: excludeFooterB,
-      deduplication,
       ...(hasNonDefault ? { keyTransforms: transforms } : {}),
     };
 
@@ -400,12 +404,9 @@ export function ConfigureStep({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="font-bold text-2xl">Configuration du rapprochement</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Cliquez sur les colonnes dans les tableaux pour définir les clés de correspondance
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Cliquez sur les colonnes dans les tableaux pour définir les clés de correspondance
+      </p>
 
       {selectionInstruction}
 
@@ -589,69 +590,6 @@ export function ConfigureStep({
               </Button>
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Footer exclusions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Options de nettoyage</CardTitle>
-          <CardDescription>
-            Exclure des lignes de pied de page du traitement
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="footer-a" className="text-xs text-muted-foreground">
-                Lignes de pied de page à ignorer — {baseName(fileA.fileName)}
-              </Label>
-              <Input
-                id="footer-a"
-                type="number"
-                min={0}
-                value={excludeFooterA}
-                onChange={(e) => setExcludeFooterA(Number(e.target.value) || 0)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="footer-b" className="text-xs text-muted-foreground">
-                Lignes de pied de page à ignorer — {baseName(fileB.fileName)}
-              </Label>
-              <Input
-                id="footer-b"
-                type="number"
-                min={0}
-                value={excludeFooterB}
-                onChange={(e) => setExcludeFooterB(Number(e.target.value) || 0)}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Deduplication */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Déduplication</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-3">
-            <Switch
-              id="dedup"
-              checked={deduplication}
-              onCheckedChange={setDeduplication}
-            />
-            <Label htmlFor="dedup">
-              Dédupliquer les lignes ayant la même clé
-            </Label>
-          </div>
-          {deduplication && (
-            <p className="text-xs text-muted-foreground mt-2">
-              Les lignes en double basées sur la clé définie seront regroupées.
-              Seule la première occurrence sera utilisée.
-            </p>
-          )}
         </CardContent>
       </Card>
 
