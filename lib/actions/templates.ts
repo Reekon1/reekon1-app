@@ -1,9 +1,14 @@
 "use server";
 
 import { z } from "zod";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { saveTemplateSchema, updateTemplateSchema } from "@/lib/validators/template";
 import type { TemplateConfig, SavedTemplate } from "@/lib/types/template";
+
+// ⚠️ SECURITY: Auth is disabled — all operations use the admin client (bypasses RLS)
+// with a hardcoded user ID. When re-enabling auth, switch back to createClient()
+// and resolve the real userId from supabase.auth.getClaims().
+const ANONYMOUS_USER_ID = "00000000-0000-0000-0000-000000000000";
 
 const uuidSchema = z.string().uuid("Identifiant invalide");
 
@@ -39,15 +44,8 @@ export async function saveTemplate(input: {
     return { success: false, error: parsed.error.issues[0].message };
   }
 
-  const supabase = await createClient();
-  const { data: authData, error: claimsError } =
-    await supabase.auth.getClaims();
-
-  if (claimsError || !authData?.claims) {
-    return { success: false, error: "Non authentifié" };
-  }
-
-  const userId = authData.claims.sub;
+  const supabase = createAdminClient();
+  const userId = ANONYMOUS_USER_ID;
 
   // Check for duplicate name
   const { data: existing } = await supabase
@@ -89,15 +87,8 @@ export async function upsertTemplate(input: {
     return { success: false, error: parsed.error.issues[0].message };
   }
 
-  const supabase = await createClient();
-  const { data: authData, error: claimsError } =
-    await supabase.auth.getClaims();
-
-  if (claimsError || !authData?.claims) {
-    return { success: false, error: "Non authentifié" };
-  }
-
-  const userId = authData.claims.sub;
+  const supabase = createAdminClient();
+  const userId = ANONYMOUS_USER_ID;
 
   const { data, error } = await supabase
     .from("reconciliation_templates")
@@ -122,17 +113,12 @@ export async function upsertTemplate(input: {
 }
 
 export async function listTemplates(): Promise<ListResult> {
-  const supabase = await createClient();
-  const { data: authData, error: claimsError } =
-    await supabase.auth.getClaims();
-
-  if (claimsError || !authData?.claims) {
-    return { success: false, error: "Non authentifié" };
-  }
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase
     .from("reconciliation_templates")
     .select("id, template_name, description, config, created_at, updated_at")
+    .eq("user_id", ANONYMOUS_USER_ID)
     .order("updated_at", { ascending: false });
 
   if (error) {
@@ -156,13 +142,7 @@ export async function getTemplate(id: string): Promise<GetResult> {
     return { success: false, error: "Identifiant invalide." };
   }
 
-  const supabase = await createClient();
-  const { data: authData, error: claimsError } =
-    await supabase.auth.getClaims();
-
-  if (claimsError || !authData?.claims) {
-    return { success: false, error: "Non authentifié" };
-  }
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase
     .from("reconciliation_templates")
@@ -204,19 +184,13 @@ export async function updateTemplate(
     return { success: false, error: parsed.error.issues[0].message };
   }
 
-  const supabase = await createClient();
-  const { data: authData, error: claimsError } =
-    await supabase.auth.getClaims();
-
-  if (claimsError || !authData?.claims) {
-    return { success: false, error: "Non authentifié" };
-  }
+  const supabase = createAdminClient();
 
   // Check for duplicate name (exclude current template)
   const { data: existing } = await supabase
     .from("reconciliation_templates")
     .select("id")
-    .eq("user_id", authData.claims.sub)
+    .eq("user_id", ANONYMOUS_USER_ID)
     .eq("template_name", parsed.data.templateName)
     .neq("id", id)
     .maybeSingle();
@@ -246,13 +220,7 @@ export async function deleteTemplate(id: string): Promise<MutationResult> {
     return { success: false, error: "Identifiant invalide." };
   }
 
-  const supabase = await createClient();
-  const { data: authData, error: claimsError } =
-    await supabase.auth.getClaims();
-
-  if (claimsError || !authData?.claims) {
-    return { success: false, error: "Non authentifié" };
-  }
+  const supabase = createAdminClient();
 
   const { error } = await supabase
     .from("reconciliation_templates")
