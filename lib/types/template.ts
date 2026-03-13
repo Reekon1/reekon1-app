@@ -1,4 +1,4 @@
-import type { ReconciliationConfig } from "@/lib/reconciliation/types";
+import type { ReconciliationConfig, KeyTransform } from "@/lib/reconciliation/types";
 
 export interface ApplyTemplateResult {
   config: ReconciliationConfig;
@@ -19,6 +19,7 @@ export interface TemplateConfig {
   excludeFooterRowsA: number;
   excludeFooterRowsB: number;
   deduplication: boolean;
+  keyTransforms?: KeyTransform[];
 }
 
 export interface SavedTemplate {
@@ -50,6 +51,7 @@ export function toTemplateConfig(
     excludeFooterRowsA: config.excludeFooterRowsA,
     excludeFooterRowsB: config.excludeFooterRowsB,
     deduplication: config.deduplication,
+    ...(config.keyTransforms ? { keyTransforms: config.keyTransforms } : {}),
   };
 }
 
@@ -90,6 +92,7 @@ export function fromTemplateConfig(
       excludeFooterRowsA: template.excludeFooterRowsA,
       excludeFooterRowsB: template.excludeFooterRowsB,
       deduplication: template.deduplication,
+      ...(template.keyTransforms ? { keyTransforms: template.keyTransforms } : {}),
     },
     warnings,
   };

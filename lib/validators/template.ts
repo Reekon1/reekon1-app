@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+export const keyTransformSchema = z.enum([
+  "default",
+  "alphanumeric_only",
+  "extract_code_prefix",
+  "absolute_amount",
+]);
+
 export const templateConfigSchema = z.object({
   keyColumnsA: z.array(z.string()).min(1),
   keyColumnsB: z.array(z.string()).min(1),
@@ -10,6 +17,7 @@ export const templateConfigSchema = z.object({
   excludeFooterRowsA: z.number().int().min(0),
   excludeFooterRowsB: z.number().int().min(0),
   deduplication: z.boolean(),
+  keyTransforms: z.array(keyTransformSchema).optional(),
 });
 
 export const saveTemplateSchema = z.object({

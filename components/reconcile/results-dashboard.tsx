@@ -20,6 +20,10 @@ interface ResultsDashboardProps {
   onNewReconciliation: () => void;
 }
 
+function baseName(fileName: string) {
+  return fileName.replace(/\.[^/.]+$/, "");
+}
+
 function formatAmount(n: number): string {
   return n.toLocaleString("fr-FR", {
     minimumFractionDigits: 2,
@@ -201,7 +205,7 @@ export function ResultsDashboard({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center">
-            <p className="text-sm text-muted-foreground">Uniques Système A</p>
+            <p className="text-sm text-muted-foreground">Uniques {baseName(fileA.fileName)}</p>
           </CardContent>
         </Card>
         <Card className="border-red-200">
@@ -211,13 +215,13 @@ export function ResultsDashboard({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center">
-            <p className="text-sm text-muted-foreground">Uniques Système B</p>
+            <p className="text-sm text-muted-foreground">Uniques {baseName(fileB.fileName)}</p>
           </CardContent>
         </Card>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        {s.totalA} lignes Système A · {s.totalB} lignes Système B
+        {s.totalA} lignes {baseName(fileA.fileName)} · {s.totalB} lignes {baseName(fileB.fileName)}
         {s.duplicatesA + s.duplicatesB > 0 &&
           ` · ${s.duplicatesA + s.duplicatesB} doublons supprimés`}
       </p>
@@ -232,14 +236,14 @@ export function ResultsDashboard({
       />
 
       <DetailTable
-        title="Lignes uniques Système A"
+        title={`Lignes uniques ${baseName(fileA.fileName)}`}
         count={s.uniqueA}
         headers={uniqueAHeaders}
         rows={uniqueARows}
       />
 
       <DetailTable
-        title="Lignes uniques Système B"
+        title={`Lignes uniques ${baseName(fileB.fileName)}`}
         count={s.uniqueB}
         headers={uniqueBHeaders}
         rows={uniqueBRows}

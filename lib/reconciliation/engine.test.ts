@@ -199,3 +199,123 @@ describe("reconcile", () => {
     expect(result.summary.matchRate).toBe(50);
   });
 });
+
+describe("reconcile with keyTransforms", () => {
+  it("alphanumeric_only: matches N°3456 ↔ N3456", () => {
+    const fileA = makeParsed(["ref", "amount"], [["N°3456", "100"]]);
+    const fileB = makeParsed(["ref", "amount"], [["N3456", "100"]]);
+
+    const result = reconcile(fileA, fileB, {
+      ...baseConfig,
+      keyTransforms: ["alphanumeric_only"],
+    });
+
+    expect(result.summary.exactMatches).toBe(1);
+    expect(result.summary.uniqueA).toBe(0);
+    expect(result.summary.uniqueB).toBe(0);
+  });
+
+  it("alphanumeric_only absent: N°3456 ↔ N3456 does not match", () => {
+    const fileA = makeParsed(["ref", "amount"], [["N°3456", "100"]]);
+    const fileB = makeParsed(["ref", "amount"], [["N3456", "100"]]);
+
+    const result = reconcile(fileA, fileB, baseConfig);
+
+    expect(result.summary.exactMatches).toBe(0);
+    expect(result.summary.uniqueA).toBe(1);
+    expect(result.summary.uniqueB).toBe(1);
+  });
+
+  it("extract_code_prefix: matches CNFFOKTOS – OKTOS ↔ CNFFOKTOS", () => {
+    const fileA = makeParsed(["code", "amount"], [["CNFFOKTOS – OKTOS", "100"]]);
+    const fileB = makeParsed(["code", "amount"], [["CNFFOKTOS", "100"]]);
+
+    const result = reconcile(fileA, fileB, {
+      ...baseConfig,
+      keyTransforms: ["extract_code_prefix"],
+    });
+
+    expect(result.summary.exactMatches).toBe(1);
+  });
+
+  it("extract_code_prefix: matches value without separator as-is", () => {
+    const fileA = makeParsed(["code", "amount"], [["CNFFOKTOS", "100"]]);
+    const fileB = makeParsed(["code", "amount"], [["CNFFOKTOS", "100"]]);
+
+    const result = reconcile(fileA, fileB, {
+      ...baseConfig,
+      keyTransforms: ["extract_code_prefix"],
+    });
+
+    expect(result.summary.exactMatches).toBe(1);
+  });
+
+  it("absolute_amount: matches -1234.56 ↔ 1234.56", () => {
+    const fileA = makeParsed(["ref", "amount"], [["INV001", "-1234.56"]]);
+    const fileB = makeParsed(["ref", "amount"], [["INV001", "1234.56"]]);
+
+    const result = reconcile(fileA, fileB, {
+      ...baseConfig,
+      keyTransforms: ["default", "absolute_amount"],
+      keyColumnsA: [0, 1],
+      keyColumnsB: [0, 1],
+      amountColumnA: null,
+      amountColumnB: null,
+    });
+
+    expect(result.summary.exactMatches).toBe(1);
+  });
+
+  it("composite key with mixed transforms", () => {
+    const fileA = makeParsed(
+      ["ref", "code", "date"],
+      [["N°3456", "CNFFOKTOS – OKTOS", "2024-01"]]
+    );
+    const fileB = makeParsed(
+      ["ref", "code", "date"],
+      [["N3456", "CNFFOKTOS", "2024-01"]]
+    );
+
+    const result = reconcile(fileA, fileB, {
+      ...baseConfig,
+      keyColumnsA: [0, 1, 2],
+      keyColumnsB: [0, 1, 2],
+      amountColumnA: null,
+      amountColumnB: null,
+      keyTransforms: ["alphanumeric_only", "extract_code_prefix", "default"],
+    });
+
+    expect(result.summary.exactMatches).toBe(1);
+  });
+
+  it("keyTransforms: undefined behaves same as omitting the field", () => {
+    const fileA = makeParsed(["id", "amount"], [["A1", "100"]]);
+    const fileB = makeParsed(["id", "amount"], [["A1", "100"]]);
+
+    const withUndefined = reconcile(fileA, fileB, {
+      ...baseConfig,
+      keyTransforms: undefined,
+    });
+    const withoutField = reconcile(fileA, fileB, baseConfig);
+
+    expect(withUndefined.summary.exactMatches).toBe(withoutField.summary.exactMatches);
+    expect(withUndefined.summary.uniqueA).toBe(withoutField.summary.uniqueA);
+  });
+
+  it("partial transforms array: missing positions default to 'default'", () => {
+    const fileA = makeParsed(["ref", "code"], [["N°3456", "SUP1"]]);
+    const fileB = makeParsed(["ref", "code"], [["n3456", "SUP1"]]);
+
+    // Only one transform specified for two columns; second position defaults to "default"
+    const result = reconcile(fileA, fileB, {
+      ...baseConfig,
+      keyColumnsA: [0, 1],
+      keyColumnsB: [0, 1],
+      amountColumnA: null,
+      amountColumnB: null,
+      keyTransforms: ["alphanumeric_only"],
+    });
+
+    expect(result.summary.exactMatches).toBe(1);
+  });
+});

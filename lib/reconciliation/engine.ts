@@ -7,7 +7,7 @@ import type {
   UniqueRow,
 } from "./types";
 import {
-  buildKey,
+  buildKeyWithTransforms,
   parseAmount,
   applyExclusions,
   deduplicateRows,
@@ -45,14 +45,14 @@ export function reconcile(
   // 3. Build key maps
   const mapA = new Map<string, string[][]>();
   for (const row of rowsA) {
-    const key = buildKey(row, config.keyColumnsA);
+    const key = buildKeyWithTransforms(row, config.keyColumnsA, config.keyTransforms);
     if (!mapA.has(key)) mapA.set(key, []);
     mapA.get(key)!.push(row);
   }
 
   const mapB = new Map<string, string[][]>();
   for (const row of rowsB) {
-    const key = buildKey(row, config.keyColumnsB);
+    const key = buildKeyWithTransforms(row, config.keyColumnsB, config.keyTransforms);
     if (!mapB.has(key)) mapB.set(key, []);
     mapB.get(key)!.push(row);
   }

@@ -18,6 +18,47 @@ export function buildKey(row: string[], columnIndices: number[]): string {
   return columnIndices.map((i) => normalizeKey(row[i] ?? "")).join("||");
 }
 
+function applyAlphanumericOnly(value: string): string {
+  return normalizeKey(value).replace(/[^a-z0-9]/g, "");
+}
+
+function applyExtractCodePrefix(value: string): string {
+  const normalized = normalizeKey(value);
+  const match = normalized.match(/^(.*?)\s+[–—-]\s+/);
+  return match ? match[1].trim() : normalized;
+}
+
+function applyAbsoluteAmount(value: string): string {
+  return parseAmount(value).toFixed(2);
+}
+
+export function applyTransform(value: string, transform: import("./types").KeyTransform): string {
+  switch (transform) {
+    case "alphanumeric_only":
+      return applyAlphanumericOnly(value);
+    case "extract_code_prefix":
+      return applyExtractCodePrefix(value);
+    case "absolute_amount":
+      return applyAbsoluteAmount(value);
+    case "default":
+    default:
+      return normalizeKey(value);
+  }
+}
+
+export function buildKeyWithTransforms(
+  row: string[],
+  columnIndices: number[],
+  transforms?: import("./types").KeyTransform[]
+): string {
+  return columnIndices
+    .map((colIdx, pos) => {
+      const transform = transforms?.[pos] ?? "default";
+      return applyTransform(row[colIdx] ?? "", transform);
+    })
+    .join("||");
+}
+
 /**
  * Parse a string amount to a number.
  * Handles French formatting (1 234,56), thousand separators, negative values.

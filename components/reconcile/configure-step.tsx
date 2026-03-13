@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { ParsedFile, ReconciliationConfig } from "@/lib/reconciliation/types";
+import type { ParsedFile, ReconciliationConfig, KeyTransform } from "@/lib/reconciliation/types";
 
 interface ConfigureStepProps {
   fileA: ParsedFile;
@@ -27,35 +28,202 @@ interface ConfigureStepProps {
 interface KeyPair {
   colA: number;
   colB: number;
+  transform: KeyTransform;
 }
 
-function ColumnSelect({
-  headers,
+type ActiveSelection =
+  | { type: "key"; pairIndex: number; side: "A" | "B" }
+  | { type: "amount"; side: "A" | "B" }
+  | null;
+
+const PAIR_COLORS = [
+  {
+    bg: "bg-blue-100",
+    text: "text-blue-800",
+    cellBg: "bg-blue-50",
+    badge: "bg-blue-600 text-white",
+    ring: "ring-blue-500",
+    activeBorder: "border-blue-500",
+  },
+  {
+    bg: "bg-violet-100",
+    text: "text-violet-800",
+    cellBg: "bg-violet-50",
+    badge: "bg-violet-600 text-white",
+    ring: "ring-violet-500",
+    activeBorder: "border-violet-500",
+  },
+  {
+    bg: "bg-amber-100",
+    text: "text-amber-800",
+    cellBg: "bg-amber-50",
+    badge: "bg-amber-600 text-white",
+    ring: "ring-amber-500",
+    activeBorder: "border-amber-500",
+  },
+  {
+    bg: "bg-teal-100",
+    text: "text-teal-800",
+    cellBg: "bg-teal-50",
+    badge: "bg-teal-600 text-white",
+    ring: "ring-teal-500",
+    activeBorder: "border-teal-500",
+  },
+] as const;
+
+const AMOUNT_COLOR = {
+  bg: "bg-green-100",
+  text: "text-green-800",
+  cellBg: "bg-green-50",
+  badge: "bg-green-600 text-white",
+  ring: "ring-green-500",
+  activeBorder: "border-green-500",
+};
+
+function TransformSelect({
   value,
   onChange,
-  placeholder,
   id,
 }: {
-  headers: string[];
-  value: number | null;
-  onChange: (v: number | null) => void;
-  placeholder: string;
+  value: KeyTransform;
+  onChange: (v: KeyTransform) => void;
   id: string;
 }) {
   return (
     <select
       id={id}
-      value={value ?? ""}
-      onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+      value={value}
+      onChange={(e) => onChange(e.target.value as KeyTransform)}
       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
-      <option value="">{placeholder}</option>
-      {headers.map((h, i) => (
-        <option key={i} value={i}>
-          {h || `Col ${i + 1}`}
-        </option>
-      ))}
+      <option value="default">Normalisation standard</option>
+      <option value="alphanumeric_only">Alphanumérique uniquement (ex: N°3456 → n3456)</option>
+      <option value="extract_code_prefix">Extraire le code (ex: CNFFOKTOS – OKTOS → cnffoktos)</option>
+      <option value="absolute_amount">Valeur absolue (ex: -1 234,56 → 1234.56)</option>
     </select>
+  );
+}
+
+function baseName(fileName: string) {
+  return fileName.replace(/\.[^/.]+$/, "");
+}
+
+const MAX_PREVIEW_ROWS = 5;
+
+type ColColor = (typeof PAIR_COLORS)[number] | typeof AMOUNT_COLOR;
+
+function SpreadsheetPreview({
+  file,
+  side,
+  keyPairs,
+  amountCol,
+  activeSelection,
+  onColumnClick,
+}: {
+  file: ParsedFile;
+  side: "A" | "B";
+  keyPairs: KeyPair[];
+  amountCol: number | null;
+  activeSelection: ActiveSelection;
+  onColumnClick: (colIdx: number) => void;
+}) {
+  const isTargetSide = activeSelection?.side === side;
+  const previewRows = file.rows.slice(0, MAX_PREVIEW_ROWS);
+
+  const getColInfo = (colIdx: number): { color: ColColor; label: string } | null => {
+    const keyPairIdx = keyPairs.findIndex(
+      (p) => (side === "A" ? p.colA : p.colB) === colIdx
+    );
+    if (keyPairIdx !== -1) {
+      return {
+        color: PAIR_COLORS[keyPairIdx % PAIR_COLORS.length],
+        label: `Clé ${keyPairIdx + 1}`,
+      };
+    }
+    if (amountCol === colIdx) {
+      return { color: AMOUNT_COLOR, label: "Montant" };
+    }
+    return null;
+  };
+
+  return (
+    <div
+      className={cn(
+        "rounded-md border overflow-hidden transition-shadow",
+        isTargetSide && "ring-2 ring-primary shadow-md"
+      )}
+    >
+      <div className="overflow-x-auto max-h-56">
+        <table className="text-xs border-collapse w-full min-w-max">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-background border-b">
+              {file.headers.map((header, colIdx) => {
+                const info = getColInfo(colIdx);
+                return (
+                  <th
+                    key={colIdx}
+                    onClick={isTargetSide ? () => onColumnClick(colIdx) : undefined}
+                    className={cn(
+                      "px-2.5 py-2 text-left font-medium whitespace-nowrap border-r last:border-r-0 select-none transition-colors",
+                      isTargetSide
+                        ? "cursor-pointer hover:bg-primary/10"
+                        : "cursor-default",
+                      info
+                        ? `${info.color.bg} ${info.color.text}`
+                        : "text-muted-foreground bg-muted/20"
+                    )}
+                  >
+                    <div className="flex flex-col gap-0.5 min-w-[60px]">
+                      {info && (
+                        <span
+                          className={cn(
+                            "text-[9px] px-1 rounded font-semibold inline-block w-fit leading-4",
+                            info.color.badge
+                          )}
+                        >
+                          {info.label}
+                        </span>
+                      )}
+                      <span>{header || `Col ${colIdx + 1}`}</span>
+                    </div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {previewRows.map((row, rowIdx) => (
+              <tr key={rowIdx} className="border-b last:border-b-0 hover:bg-muted/10">
+                {file.headers.map((_, colIdx) => {
+                  const info = getColInfo(colIdx);
+                  return (
+                    <td
+                      key={colIdx}
+                      className={cn(
+                        "px-2.5 py-1 border-r last:border-r-0 max-w-[120px] truncate",
+                        info ? info.color.cellBg : ""
+                      )}
+                    >
+                      {row[colIdx] ?? ""}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            {file.rows.length > MAX_PREVIEW_ROWS && (
+              <tr>
+                <td
+                  colSpan={file.headers.length}
+                  className="px-2.5 py-1 text-center text-muted-foreground text-[10px] italic"
+                >
+                  … {file.rows.length - MAX_PREVIEW_ROWS} lignes supplémentaires
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -73,25 +241,34 @@ export function ConfigureStep({
       return initialConfig.keyColumnsA.map((colA, i) => ({
         colA,
         colB: initialConfig.keyColumnsB[i] ?? 0,
+        transform: initialConfig.keyTransforms?.[i] ?? "default",
       }));
     }
-    return [{ colA: 0, colB: 0 }];
+    return [{ colA: 0, colB: 0, transform: "default" }];
   });
-  const [amountColA, setAmountColA] = useState<number | null>(initialConfig?.amountColumnA ?? null);
-  const [amountColB, setAmountColB] = useState<number | null>(initialConfig?.amountColumnB ?? null);
-  const [excludeHeaderA, setExcludeHeaderA] = useState(initialConfig?.excludeHeaderRowsA ?? 0);
-  const [excludeHeaderB, setExcludeHeaderB] = useState(initialConfig?.excludeHeaderRowsB ?? 0);
+  const [amountColA, setAmountColA] = useState<number | null>(
+    initialConfig?.amountColumnA ?? null
+  );
+  const [amountColB, setAmountColB] = useState<number | null>(
+    initialConfig?.amountColumnB ?? null
+  );
   const [excludeFooterA, setExcludeFooterA] = useState(initialConfig?.excludeFooterRowsA ?? 0);
   const [excludeFooterB, setExcludeFooterB] = useState(initialConfig?.excludeFooterRowsB ?? 0);
   const [deduplication, setDeduplication] = useState(initialConfig?.deduplication ?? false);
   const [error, setError] = useState<string | null>(null);
+  const [activeSelection, setActiveSelection] = useState<ActiveSelection>(null);
 
   const addKeyPair = () => {
-    setKeyPairs((prev) => [...prev, { colA: 0, colB: 0 }]);
+    const newIndex = keyPairs.length;
+    setKeyPairs((prev) => [...prev, { colA: 0, colB: 0, transform: "default" }]);
+    setActiveSelection({ type: "key", pairIndex: newIndex, side: "A" });
   };
 
   const removeKeyPair = (index: number) => {
     setKeyPairs((prev) => prev.filter((_, i) => i !== index));
+    if (activeSelection?.type === "key" && activeSelection.pairIndex === index) {
+      setActiveSelection(null);
+    }
   };
 
   const updateKeyPair = (index: number, field: "colA" | "colB", value: number) => {
@@ -100,15 +277,44 @@ export function ConfigureStep({
     );
   };
 
+  const updateKeyPairTransform = (index: number, value: KeyTransform) => {
+    setKeyPairs((prev) =>
+      prev.map((pair, i) => (i === index ? { ...pair, transform: value } : pair))
+    );
+  };
+
+  const handleColumnClick = (side: "A" | "B", colIdx: number) => {
+    if (!activeSelection || activeSelection.side !== side) return;
+
+    if (activeSelection.type === "key") {
+      const { pairIndex } = activeSelection;
+      if (side === "A") {
+        updateKeyPair(pairIndex, "colA", colIdx);
+        setActiveSelection({ type: "key", pairIndex, side: "B" });
+      } else {
+        updateKeyPair(pairIndex, "colB", colIdx);
+        setActiveSelection(null);
+      }
+    } else if (activeSelection.type === "amount") {
+      if (side === "A") {
+        setAmountColA(colIdx);
+        setActiveSelection({ type: "amount", side: "B" });
+      } else {
+        setAmountColB(colIdx);
+        setActiveSelection(null);
+      }
+    }
+  };
+
   const handleSubmit = () => {
     setError(null);
+    setActiveSelection(null);
 
     if (keyPairs.length === 0) {
       setError("Veuillez sélectionner au moins une colonne clé pour chaque fichier");
       return;
     }
 
-    // Check that amount columns are either both set or both null
     if (
       (amountColA !== null && amountColB === null) ||
       (amountColA === null && amountColB !== null)
@@ -119,162 +325,286 @@ export function ConfigureStep({
       return;
     }
 
+    const transforms = keyPairs.map((p) => p.transform);
+    const hasNonDefault = transforms.some((t) => t !== "default");
+
     const config: ReconciliationConfig = {
       keyColumnsA: keyPairs.map((p) => p.colA),
       keyColumnsB: keyPairs.map((p) => p.colB),
       amountColumnA: amountColA,
       amountColumnB: amountColB,
-      excludeHeaderRowsA: excludeHeaderA,
-      excludeHeaderRowsB: excludeHeaderB,
+      excludeHeaderRowsA: 0,
+      excludeHeaderRowsB: 0,
       excludeFooterRowsA: excludeFooterA,
       excludeFooterRowsB: excludeFooterB,
       deduplication,
+      ...(hasNonDefault ? { keyTransforms: transforms } : {}),
     };
 
     onSubmit(config);
   };
+
+  const getColName = (file: ParsedFile, colIdx: number) =>
+    file.headers[colIdx] || `Col ${colIdx + 1}`;
+
+  const selectionInstruction = (() => {
+    if (!activeSelection) return null;
+    const file = activeSelection.side === "A" ? fileA : fileB;
+    const fileName = baseName(file.fileName);
+    if (activeSelection.type === "key") {
+      const color = PAIR_COLORS[activeSelection.pairIndex % PAIR_COLORS.length];
+      return (
+        <div
+          className={cn(
+            "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium",
+            color.bg,
+            color.text
+          )}
+        >
+          <span>
+            Cliquez sur une colonne dans{" "}
+            <span className="font-bold">{fileName}</span>{" "}
+            pour la Clé {activeSelection.pairIndex + 1}
+          </span>
+          <button
+            onClick={() => setActiveSelection(null)}
+            className="ml-auto text-xs opacity-60 hover:opacity-100"
+          >
+            Annuler
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium",
+          AMOUNT_COLOR.bg,
+          AMOUNT_COLOR.text
+        )}
+      >
+        <span>
+          Cliquez sur une colonne dans{" "}
+          <span className="font-bold">{fileName}</span>{" "}
+          pour le Montant
+        </span>
+        <button
+          onClick={() => setActiveSelection(null)}
+          className="ml-auto text-xs opacity-60 hover:opacity-100"
+        >
+          Annuler
+        </button>
+      </div>
+    );
+  })();
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="font-bold text-2xl">Configuration du rapprochement</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Définissez les clés de correspondance et les options de traitement
+          Cliquez sur les colonnes dans les tableaux pour définir les clés de correspondance
         </p>
       </div>
 
-      {/* Key columns */}
+      {selectionInstruction}
+
+      {/* Spreadsheet previews */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <p className="text-sm font-medium mb-1.5">{baseName(fileA.fileName)}</p>
+          <SpreadsheetPreview
+            file={fileA}
+            side="A"
+            keyPairs={keyPairs}
+            amountCol={amountColA}
+            activeSelection={activeSelection}
+            onColumnClick={(colIdx) => handleColumnClick("A", colIdx)}
+          />
+        </div>
+        <div>
+          <p className="text-sm font-medium mb-1.5">{baseName(fileB.fileName)}</p>
+          <SpreadsheetPreview
+            file={fileB}
+            side="B"
+            keyPairs={keyPairs}
+            amountCol={amountColB}
+            activeSelection={activeSelection}
+            onColumnClick={(colIdx) => handleColumnClick("B", colIdx)}
+          />
+        </div>
+      </div>
+
+      {/* Key pairs */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Clés de rapprochement</CardTitle>
           <CardDescription>
-            Sélectionnez les colonnes qui identifient de manière unique chaque
-            ligne entre les deux fichiers
+            Cliquez sur un nom de colonne ci-dessous pour le modifier dans les tableaux
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          {keyPairs.map((pair, index) => (
-            <div key={index} className="flex items-end gap-3">
-              <div className="flex-1">
-                <Label htmlFor={`key-a-${index}`} className="text-xs text-muted-foreground">
-                  Système A
-                </Label>
-                <ColumnSelect
-                  id={`key-a-${index}`}
-                  headers={fileA.headers}
-                  value={pair.colA}
-                  onChange={(v) => updateKeyPair(index, "colA", v ?? 0)}
-                  placeholder="Colonne..."
-                />
+        <CardContent className="flex flex-col gap-3">
+          {keyPairs.map((pair, index) => {
+            const color = PAIR_COLORS[index % PAIR_COLORS.length];
+            const isActiveA =
+              activeSelection?.type === "key" &&
+              activeSelection.pairIndex === index &&
+              activeSelection.side === "A";
+            const isActiveB =
+              activeSelection?.type === "key" &&
+              activeSelection.pairIndex === index &&
+              activeSelection.side === "B";
+
+            return (
+              <div
+                key={index}
+                className={cn(
+                  "flex flex-col gap-2 pb-3",
+                  index < keyPairs.length - 1 ? "border-b" : ""
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0",
+                      color.badge
+                    )}
+                  >
+                    Clé {index + 1}
+                  </span>
+                  <button
+                    onClick={() =>
+                      setActiveSelection({ type: "key", pairIndex: index, side: "A" })
+                    }
+                    className={cn(
+                      "flex-1 text-sm px-2 py-1 rounded border text-left truncate transition-all",
+                      isActiveA
+                        ? `${color.bg} ${color.text} ${color.activeBorder} ring-2 ${color.ring}`
+                        : `${color.bg} ${color.text} border-transparent hover:${color.activeBorder}`
+                    )}
+                  >
+                    {getColName(fileA, pair.colA)}
+                    {isActiveA && <span className="ml-1 opacity-60 text-xs">← cliquez dans le tableau</span>}
+                  </button>
+                  <span className="text-muted-foreground text-sm flex-shrink-0">↔</span>
+                  <button
+                    onClick={() =>
+                      setActiveSelection({ type: "key", pairIndex: index, side: "B" })
+                    }
+                    className={cn(
+                      "flex-1 text-sm px-2 py-1 rounded border text-left truncate transition-all",
+                      isActiveB
+                        ? `${color.bg} ${color.text} ${color.activeBorder} ring-2 ${color.ring}`
+                        : `${color.bg} ${color.text} border-transparent hover:${color.activeBorder}`
+                    )}
+                  >
+                    {getColName(fileB, pair.colB)}
+                    {isActiveB && <span className="ml-1 opacity-60 text-xs">← cliquez dans le tableau</span>}
+                  </button>
+                  {keyPairs.length > 1 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeKeyPair(index)}
+                      className="h-7 w-7 p-0 flex-shrink-0"
+                    >
+                      ✕
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 pl-[72px]">
+                  <Label
+                    htmlFor={`transform-${index}`}
+                    className="text-xs text-muted-foreground whitespace-nowrap"
+                  >
+                    Transformation :
+                  </Label>
+                  <TransformSelect
+                    id={`transform-${index}`}
+                    value={pair.transform}
+                    onChange={(v) => updateKeyPairTransform(index, v)}
+                  />
+                </div>
               </div>
-              <span className="pb-2 text-muted-foreground">↔</span>
-              <div className="flex-1">
-                <Label htmlFor={`key-b-${index}`} className="text-xs text-muted-foreground">
-                  Système B
-                </Label>
-                <ColumnSelect
-                  id={`key-b-${index}`}
-                  headers={fileB.headers}
-                  value={pair.colB}
-                  onChange={(v) => updateKeyPair(index, "colB", v ?? 0)}
-                  placeholder="Colonne..."
-                />
-              </div>
-              {keyPairs.length > 1 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removeKeyPair(index)}
-                  className="pb-2"
-                >
-                  ✕
-                </Button>
-              )}
-            </div>
-          ))}
+            );
+          })}
           <Button variant="outline" size="sm" onClick={addKeyPair} className="w-fit">
             + Ajouter une colonne à la clé
           </Button>
         </CardContent>
       </Card>
 
-      {/* Amount columns */}
+      {/* Amount column */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Colonne de montant</CardTitle>
           <CardDescription>
-            Optionnel — permet de détecter les écarts de montants entre lignes
-            correspondantes
+            Optionnel — permet de détecter les écarts de montants entre lignes correspondantes
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-end gap-3">
-            <div className="flex-1">
-              <Label htmlFor="amount-a" className="text-xs text-muted-foreground">
-                Système A
-              </Label>
-              <ColumnSelect
-                id="amount-a"
-                headers={fileA.headers}
-                value={amountColA}
-                onChange={setAmountColA}
-                placeholder="Aucune"
-              />
-            </div>
-            <span className="pb-2 text-muted-foreground">↔</span>
-            <div className="flex-1">
-              <Label htmlFor="amount-b" className="text-xs text-muted-foreground">
-                Système B
-              </Label>
-              <ColumnSelect
-                id="amount-b"
-                headers={fileB.headers}
-                value={amountColB}
-                onChange={setAmountColB}
-                placeholder="Aucune"
-              />
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveSelection({ type: "amount", side: "A" })}
+              className={cn(
+                "flex-1 text-sm px-2 py-1.5 rounded border text-left truncate transition-all",
+                activeSelection?.type === "amount" && activeSelection.side === "A"
+                  ? `${AMOUNT_COLOR.bg} ${AMOUNT_COLOR.text} ${AMOUNT_COLOR.activeBorder} ring-2 ${AMOUNT_COLOR.ring}`
+                  : amountColA !== null
+                  ? `${AMOUNT_COLOR.bg} ${AMOUNT_COLOR.text} border-transparent hover:${AMOUNT_COLOR.activeBorder}`
+                  : "text-muted-foreground border-dashed border-muted-foreground/40 hover:border-muted-foreground/70"
+              )}
+            >
+              {amountColA !== null
+                ? getColName(fileA, amountColA)
+                : `Choisir dans ${baseName(fileA.fileName)}`}
+            </button>
+            <span className="text-muted-foreground text-sm flex-shrink-0">↔</span>
+            <button
+              onClick={() => setActiveSelection({ type: "amount", side: "B" })}
+              className={cn(
+                "flex-1 text-sm px-2 py-1.5 rounded border text-left truncate transition-all",
+                activeSelection?.type === "amount" && activeSelection.side === "B"
+                  ? `${AMOUNT_COLOR.bg} ${AMOUNT_COLOR.text} ${AMOUNT_COLOR.activeBorder} ring-2 ${AMOUNT_COLOR.ring}`
+                  : amountColB !== null
+                  ? `${AMOUNT_COLOR.bg} ${AMOUNT_COLOR.text} border-transparent hover:${AMOUNT_COLOR.activeBorder}`
+                  : "text-muted-foreground border-dashed border-muted-foreground/40 hover:border-muted-foreground/70"
+              )}
+            >
+              {amountColB !== null
+                ? getColName(fileB, amountColB)
+                : `Choisir dans ${baseName(fileB.fileName)}`}
+            </button>
+            {(amountColA !== null || amountColB !== null) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setAmountColA(null);
+                  setAmountColB(null);
+                }}
+                className="h-7 w-7 p-0 flex-shrink-0 text-muted-foreground"
+              >
+                ✕
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Exclusions */}
+      {/* Footer exclusions */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Options de nettoyage</CardTitle>
           <CardDescription>
-            Exclure des lignes d&apos;en-tête ou de pied de page du traitement
+            Exclure des lignes de pied de page du traitement
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="header-a" className="text-xs text-muted-foreground">
-                Lignes d&apos;en-tête à ignorer — Système A
-              </Label>
-              <Input
-                id="header-a"
-                type="number"
-                min={0}
-                value={excludeHeaderA}
-                onChange={(e) => setExcludeHeaderA(Number(e.target.value) || 0)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="header-b" className="text-xs text-muted-foreground">
-                Lignes d&apos;en-tête à ignorer — Système B
-              </Label>
-              <Input
-                id="header-b"
-                type="number"
-                min={0}
-                value={excludeHeaderB}
-                onChange={(e) => setExcludeHeaderB(Number(e.target.value) || 0)}
-              />
-            </div>
-            <div>
               <Label htmlFor="footer-a" className="text-xs text-muted-foreground">
-                Lignes de pied de page à ignorer — Système A
+                Lignes de pied de page à ignorer — {baseName(fileA.fileName)}
               </Label>
               <Input
                 id="footer-a"
@@ -286,7 +616,7 @@ export function ConfigureStep({
             </div>
             <div>
               <Label htmlFor="footer-b" className="text-xs text-muted-foreground">
-                Lignes de pied de page à ignorer — Système B
+                Lignes de pied de page à ignorer — {baseName(fileB.fileName)}
               </Label>
               <Input
                 id="footer-b"

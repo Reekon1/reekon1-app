@@ -27,6 +27,12 @@ export function toParsedFile(raw: RawParsedFile, headerRowIndex: number): Parsed
   };
 }
 
+export type KeyTransform =
+  | "default"
+  | "alphanumeric_only"
+  | "extract_code_prefix"
+  | "absolute_amount";
+
 export interface ReconciliationConfig {
   keyColumnsA: number[];
   keyColumnsB: number[];
@@ -37,6 +43,7 @@ export interface ReconciliationConfig {
   excludeFooterRowsA: number;
   excludeFooterRowsB: number;
   deduplication: boolean;
+  keyTransforms?: KeyTransform[];
 }
 
 export interface ReconciliationSummary {
