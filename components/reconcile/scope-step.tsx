@@ -1,14 +1,13 @@
 "use client";
 
 import { DataPreview } from "@/components/reconcile/data-preview";
+import { DataPreviewFooter } from "@/components/reconcile/data-preview-footer";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -73,43 +72,23 @@ export function ScopeStep({
         />
       </div>
 
-      {/* Footer exclusions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Exclusion de pieds de page</CardTitle>
-          <CardDescription>
-            Exclure des lignes de pied de page du traitement
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="footer-a" className="text-xs text-muted-foreground">
-                Lignes à ignorer — {baseName(rawA.fileName)}
-              </Label>
-              <Input
-                id="footer-a"
-                type="number"
-                min={0}
-                value={excludeFooterA}
-                onChange={(e) => onExcludeFooterChangeA(Number(e.target.value) || 0)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="footer-b" className="text-xs text-muted-foreground">
-                Lignes à ignorer — {baseName(rawB.fileName)}
-              </Label>
-              <Input
-                id="footer-b"
-                type="number"
-                min={0}
-                value={excludeFooterB}
-                onChange={(e) => onExcludeFooterChangeB(Number(e.target.value) || 0)}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Footer exclusions — visual click-to-jump like header */}
+      <div className="flex flex-col gap-6">
+        <DataPreviewFooter
+          raw={rawA}
+          label={`Pied de page — ${rawA.fileName}`}
+          headerRowIndex={headerRowIndexA}
+          excludeFooter={excludeFooterA}
+          onExcludeFooterChange={onExcludeFooterChangeA}
+        />
+        <DataPreviewFooter
+          raw={rawB}
+          label={`Pied de page — ${rawB.fileName}`}
+          headerRowIndex={headerRowIndexB}
+          excludeFooter={excludeFooterB}
+          onExcludeFooterChange={onExcludeFooterChangeB}
+        />
+      </div>
 
       {/* Deduplication */}
       <Card>
