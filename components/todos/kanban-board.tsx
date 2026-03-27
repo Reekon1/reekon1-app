@@ -36,6 +36,7 @@ export function KanbanBoard({ initialTodos }: KanbanBoardProps) {
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTodo, setEditingTodo] = useState<Todo | null>(null);
+  const [defaultStatus, setDefaultStatus] = useState<TodoStatus>("backlog");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingTodo, setDeletingTodo] = useState<Todo | null>(null);
 
@@ -173,8 +174,9 @@ export function KanbanBoard({ initialTodos }: KanbanBoardProps) {
     setDeleteDialogOpen(true);
   }
 
-  function handleNewTodo() {
+  function handleNewTodo(status: TodoStatus = "backlog") {
     setEditingTodo(null);
+    setDefaultStatus(status);
     setDialogOpen(true);
   }
 
@@ -187,7 +189,7 @@ export function KanbanBoard({ initialTodos }: KanbanBoardProps) {
             Gérez vos tâches avec le board Kanban
           </p>
         </div>
-        <Button onClick={handleNewTodo} size="sm">
+        <Button onClick={() => handleNewTodo()} size="sm">
           <Plus className="h-4 w-4 mr-1" />
           Nouveau
         </Button>
@@ -209,6 +211,7 @@ export function KanbanBoard({ initialTodos }: KanbanBoardProps) {
                 todos={todosByStatus[status]}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                onAdd={handleNewTodo}
               />
             ))}
           </div>
@@ -229,6 +232,7 @@ export function KanbanBoard({ initialTodos }: KanbanBoardProps) {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         todo={editingTodo}
+        defaultStatus={defaultStatus}
         onSaved={refreshTodos}
       />
 
