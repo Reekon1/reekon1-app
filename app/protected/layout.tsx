@@ -25,6 +25,12 @@ export default function ProtectedLayout({
               >
                 Modèles
               </Link>
+              <Link
+                href="/protected/todos"
+                className="font-normal text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Todos
+              </Link>
             </div>
             <ThemeSwitcher />
           </div>

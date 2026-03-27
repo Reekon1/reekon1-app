@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Stepper } from "@/components/reconcile/stepper";
 import { UploadStep } from "@/components/reconcile/upload-step";
 import { ScopeStep } from "@/components/reconcile/scope-step";
-import { ColumnsStep, type ColumnsConfig } from "@/components/reconcile/columns-step";
+import { ConfigurationStep, type ConfigurationConfig } from "@/components/reconcile/configuration-step";
 import { ResultsDashboard } from "@/components/reconcile/results-dashboard";
 import { parseFile } from "@/lib/reconciliation/parser";
 import { reconcile } from "@/lib/reconciliation/engine";
@@ -21,8 +21,8 @@ import {
 
 const STEPS = [
   { label: "Upload", description: "Importer les fichiers" },
-  { label: "Scope", description: "En-têtes et nettoyage" },
-  { label: "Colonnes", description: "Clés et montants" },
+  { label: "Scope", description: "En-têtes et pieds de page" },
+  { label: "Configuration", description: "Clés et montants" },
 ];
 
 interface FileState {
@@ -109,7 +109,7 @@ function ReconcilePageInner() {
     if (parsedA && parsedB) {
       const headersSignature = parsedA.headers.join("\0") + "||" + parsedB.headers.join("\0");
       if (prevHeadersRef.current && prevHeadersRef.current !== headersSignature) {
-        // Headers changed — force remount of ColumnsStep
+        // Headers changed — force remount of ConfigurationStep
         setColumnsKey((k) => k + 1);
       }
       prevHeadersRef.current = headersSignature;
@@ -150,7 +150,7 @@ function ReconcilePageInner() {
   }, []);
 
   const handleReconcile = useCallback(
-    async (columnsConfig: ColumnsConfig) => {
+    async (columnsConfig: ConfigurationConfig) => {
       if (!parsedA || !parsedB) return;
 
       const config: ReconciliationConfig = {
@@ -241,8 +241,6 @@ function ReconcilePageInner() {
             excludeFooterB={excludeFooterB}
             onExcludeFooterChangeA={setExcludeFooterA}
             onExcludeFooterChangeB={setExcludeFooterB}
-            deduplication={deduplication}
-            onDeduplicationChange={setDeduplication}
             onBack={() => setCurrentStep(0)}
             onNext={() => setCurrentStep(2)}
           />
@@ -250,13 +248,15 @@ function ReconcilePageInner() {
       case 2:
         if (!parsedA || !parsedB) return null;
         return (
-          <ColumnsStep
+          <ConfigurationStep
             key={`${templateId ?? "default"}-${columnsKey}`}
             fileA={parsedA}
             fileB={parsedB}
             onSubmit={handleReconcile}
             onBack={() => setCurrentStep(1)}
             isLoading={isReconciling}
+            deduplication={deduplication}
+            onDeduplicationChange={setDeduplication}
             initialConfig={appliedTemplate?.config}
             warnings={appliedTemplate?.warnings}
           />

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Card,
   CardContent,
@@ -13,7 +14,7 @@ import {
 } from "@/components/ui/card";
 import type { ParsedFile, KeyTransform } from "@/lib/reconciliation/types";
 
-export interface ColumnsConfig {
+export interface ConfigurationConfig {
   keyColumnsA: number[];
   keyColumnsB: number[];
   amountColumnA: number | null;
@@ -21,12 +22,14 @@ export interface ColumnsConfig {
   keyTransforms?: KeyTransform[];
 }
 
-interface ColumnsStepProps {
+interface ConfigurationStepProps {
   fileA: ParsedFile;
   fileB: ParsedFile;
-  onSubmit: (config: ColumnsConfig) => void;
+  onSubmit: (config: ConfigurationConfig) => void;
   onBack: () => void;
   isLoading: boolean;
+  deduplication: boolean;
+  onDeduplicationChange: (value: boolean) => void;
   initialConfig?: {
     keyColumnsA: number[];
     keyColumnsB: number[];
@@ -38,8 +41,8 @@ interface ColumnsStepProps {
 }
 
 interface KeyPair {
-  colA: number;
-  colB: number;
+  colA: number | null;
+  colB: number | null;
   transform: KeyTransform;
 }
 
@@ -239,24 +242,26 @@ function SpreadsheetPreview({
   );
 }
 
-export function ColumnsStep({
+export function ConfigurationStep({
   fileA,
   fileB,
   onSubmit,
   onBack,
   isLoading,
+  deduplication,
+  onDeduplicationChange,
   initialConfig,
   warnings,
-}: ColumnsStepProps) {
+}: ConfigurationStepProps) {
   const [keyPairs, setKeyPairs] = useState<KeyPair[]>(() => {
     if (initialConfig) {
       return initialConfig.keyColumnsA.map((colA, i) => ({
         colA,
-        colB: initialConfig.keyColumnsB[i] ?? 0,
+        colB: initialConfig.keyColumnsB[i] ?? null,
         transform: initialConfig.keyTransforms?.[i] ?? "default",
       }));
     }
-    return [{ colA: 0, colB: 0, transform: "default" }];
+    return [];
   });
   const [amountColA, setAmountColA] = useState<number | null>(
     initialConfig?.amountColumnA ?? null
@@ -265,11 +270,19 @@ export function ColumnsStep({
     initialConfig?.amountColumnB ?? null
   );
   const [error, setError] = useState<string | null>(null);
-  const [activeSelection, setActiveSelection] = useState<ActiveSelection>(null);
+  const [activeSelection, setActiveSelection] = useState<ActiveSelection>(
+    // If no initial config, auto-start first key creation
+    initialConfig ? null : null
+  );
+
+  const isKeyValidated = (pair: KeyPair) => pair.colA !== null && pair.colB !== null;
+
+  const isKeyActive = (index: number) =>
+    activeSelection?.type === "key" && activeSelection.pairIndex === index;
 
   const addKeyPair = () => {
     const newIndex = keyPairs.length;
-    setKeyPairs((prev) => [...prev, { colA: 0, colB: 0, transform: "default" }]);
+    setKeyPairs((prev) => [...prev, { colA: null, colB: null, transform: "default" }]);
     setActiveSelection({ type: "key", pairIndex: newIndex, side: "A" });
   };
 
@@ -319,8 +332,16 @@ export function ColumnsStep({
     setError(null);
     setActiveSelection(null);
 
-    if (keyPairs.length === 0) {
-      setError("Veuillez sélectionner au moins une colonne clé pour chaque fichier");
+    const validPairs = keyPairs.filter(isKeyValidated);
+
+    if (validPairs.length === 0) {
+      setError("Ajoutez au moins une clé de rapprochement");
+      return;
+    }
+
+    const incompletePairs = keyPairs.filter((p) => !isKeyValidated(p));
+    if (incompletePairs.length > 0) {
+      setError("Certaines clés ne sont pas complètes. Terminez-les ou supprimez-les.");
       return;
     }
 
@@ -334,12 +355,12 @@ export function ColumnsStep({
       return;
     }
 
-    const transforms = keyPairs.map((p) => p.transform);
+    const transforms = validPairs.map((p) => p.transform);
     const hasNonDefault = transforms.some((t) => t !== "default");
 
-    const config: ColumnsConfig = {
-      keyColumnsA: keyPairs.map((p) => p.colA),
-      keyColumnsB: keyPairs.map((p) => p.colB),
+    const config: ConfigurationConfig = {
+      keyColumnsA: validPairs.map((p) => p.colA!),
+      keyColumnsB: validPairs.map((p) => p.colB!),
       amountColumnA: amountColA,
       amountColumnB: amountColB,
       ...(hasNonDefault ? { keyTransforms: transforms } : {}),
@@ -348,8 +369,10 @@ export function ColumnsStep({
     onSubmit(config);
   };
 
-  const getColName = (file: ParsedFile, colIdx: number) =>
-    file.headers[colIdx] || `Col ${colIdx + 1}`;
+  const getColName = (file: ParsedFile, colIdx: number | null) => {
+    if (colIdx === null) return null;
+    return file.headers[colIdx] || `Col ${colIdx + 1}`;
+  };
 
   const selectionInstruction = (() => {
     if (!activeSelection) return null;
@@ -402,51 +425,39 @@ export function ColumnsStep({
     );
   })();
 
+  // Only pass validated pairs to SpreadsheetPreview for highlighting
+  const validatedPairsForPreview: KeyPair[] = keyPairs.map((p) => ({
+    colA: p.colA,
+    colB: p.colB,
+    transform: p.transform,
+  }));
+
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">
-        Cliquez sur les colonnes dans les tableaux pour définir les clés de correspondance
+        Définissez les clés de rapprochement entre vos deux fichiers
       </p>
 
       {selectionInstruction}
 
-      {/* Spreadsheet previews */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-sm font-medium mb-1.5">{baseName(fileA.fileName)}</p>
-          <SpreadsheetPreview
-            file={fileA}
-            side="A"
-            keyPairs={keyPairs}
-            amountCol={amountColA}
-            activeSelection={activeSelection}
-            onColumnClick={(colIdx) => handleColumnClick("A", colIdx)}
-          />
-        </div>
-        <div>
-          <p className="text-sm font-medium mb-1.5">{baseName(fileB.fileName)}</p>
-          <SpreadsheetPreview
-            file={fileB}
-            side="B"
-            keyPairs={keyPairs}
-            amountCol={amountColB}
-            activeSelection={activeSelection}
-            onColumnClick={(colIdx) => handleColumnClick("B", colIdx)}
-          />
-        </div>
-      </div>
-
-      {/* Key pairs */}
+      {/* Key list — primary section */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Clés de rapprochement</CardTitle>
           <CardDescription>
-            Cliquez sur un nom de colonne ci-dessous pour le modifier dans les tableaux
+            Ajoutez une clé, puis sélectionnez la colonne correspondante dans chaque fichier
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          {keyPairs.length === 0 && !activeSelection && (
+            <p className="text-sm text-muted-foreground italic py-2">
+              Aucune clé définie. Ajoutez une clé pour commencer.
+            </p>
+          )}
           {keyPairs.map((pair, index) => {
             const color = PAIR_COLORS[index % PAIR_COLORS.length];
+            const validated = isKeyValidated(pair);
+            const active = isKeyActive(index);
             const isActiveA =
               activeSelection?.type === "key" &&
               activeSelection.pairIndex === index &&
@@ -460,19 +471,33 @@ export function ColumnsStep({
               <div
                 key={index}
                 className={cn(
-                  "flex flex-col gap-2 pb-3",
-                  index < keyPairs.length - 1 ? "border-b" : ""
+                  "flex flex-col gap-2 rounded-lg px-3 py-3 transition-all",
+                  validated && !active
+                    ? `${color.cellBg} border border-transparent`
+                    : active
+                    ? `bg-muted/30 border ${color.activeBorder}`
+                    : "border border-dashed border-muted-foreground/30"
                 )}
               >
                 <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0",
-                      color.badge
+                  {/* Validation indicator + badge */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {validated && !active ? (
+                      <span className="text-green-600 text-sm">&#10003;</span>
+                    ) : (
+                      <span className="text-muted-foreground/40 text-sm">&#9675;</span>
                     )}
-                  >
-                    Clé {index + 1}
-                  </span>
+                    <span
+                      className={cn(
+                        "text-xs font-semibold px-2 py-0.5 rounded-full",
+                        color.badge
+                      )}
+                    >
+                      Clé {index + 1}
+                    </span>
+                  </div>
+
+                  {/* Column A button */}
                   <button
                     onClick={() =>
                       setActiveSelection({ type: "key", pairIndex: index, side: "A" })
@@ -481,13 +506,20 @@ export function ColumnsStep({
                       "flex-1 text-sm px-2 py-1 rounded border text-left truncate transition-all",
                       isActiveA
                         ? `${color.bg} ${color.text} ${color.activeBorder} ring-2 ${color.ring}`
-                        : `${color.bg} ${color.text} border-transparent hover:${color.activeBorder}`
+                        : pair.colA !== null
+                        ? `${color.bg} ${color.text} border-transparent hover:${color.activeBorder}`
+                        : "text-muted-foreground border-dashed border-muted-foreground/40 hover:border-muted-foreground/70"
                     )}
                   >
-                    {getColName(fileA, pair.colA)}
-                    {isActiveA && <span className="ml-1 opacity-60 text-xs">← cliquez dans le tableau</span>}
+                    {pair.colA !== null
+                      ? getColName(fileA, pair.colA)
+                      : `Choisir dans ${baseName(fileA.fileName)}`}
+                    {isActiveA && <span className="ml-1 opacity-60 text-xs">&#8592; cliquez dans le tableau</span>}
                   </button>
-                  <span className="text-muted-foreground text-sm flex-shrink-0">↔</span>
+
+                  <span className="text-muted-foreground text-sm flex-shrink-0">&#8596;</span>
+
+                  {/* Column B button */}
                   <button
                     onClick={() =>
                       setActiveSelection({ type: "key", pairIndex: index, side: "B" })
@@ -496,44 +528,77 @@ export function ColumnsStep({
                       "flex-1 text-sm px-2 py-1 rounded border text-left truncate transition-all",
                       isActiveB
                         ? `${color.bg} ${color.text} ${color.activeBorder} ring-2 ${color.ring}`
-                        : `${color.bg} ${color.text} border-transparent hover:${color.activeBorder}`
+                        : pair.colB !== null
+                        ? `${color.bg} ${color.text} border-transparent hover:${color.activeBorder}`
+                        : "text-muted-foreground border-dashed border-muted-foreground/40 hover:border-muted-foreground/70"
                     )}
                   >
-                    {getColName(fileB, pair.colB)}
-                    {isActiveB && <span className="ml-1 opacity-60 text-xs">← cliquez dans le tableau</span>}
+                    {pair.colB !== null
+                      ? getColName(fileB, pair.colB)
+                      : `Choisir dans ${baseName(fileB.fileName)}`}
+                    {isActiveB && <span className="ml-1 opacity-60 text-xs">&#8592; cliquez dans le tableau</span>}
                   </button>
-                  {keyPairs.length > 1 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeKeyPair(index)}
-                      className="h-7 w-7 p-0 flex-shrink-0"
-                    >
-                      ✕
-                    </Button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 pl-[72px]">
-                  <Label
-                    htmlFor={`transform-${index}`}
-                    className="text-xs text-muted-foreground whitespace-nowrap"
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeKeyPair(index)}
+                    className="h-7 w-7 p-0 flex-shrink-0"
                   >
-                    Transformation :
-                  </Label>
-                  <TransformSelect
-                    id={`transform-${index}`}
-                    value={pair.transform}
-                    onChange={(v) => updateKeyPairTransform(index, v)}
-                  />
+                    &#10005;
+                  </Button>
                 </div>
+
+                {/* Transform — only show when validated or active */}
+                {(validated || active) && (
+                  <div className="flex items-center gap-2 pl-[72px]">
+                    <Label
+                      htmlFor={`transform-${index}`}
+                      className="text-xs text-muted-foreground whitespace-nowrap"
+                    >
+                      Transformation :
+                    </Label>
+                    <TransformSelect
+                      id={`transform-${index}`}
+                      value={pair.transform}
+                      onChange={(v) => updateKeyPairTransform(index, v)}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}
           <Button variant="outline" size="sm" onClick={addKeyPair} className="w-fit">
-            + Ajouter une colonne à la clé
+            + Ajouter une clé
           </Button>
         </CardContent>
       </Card>
+
+      {/* Spreadsheet previews — reference for column selection */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <p className="text-sm font-medium mb-1.5">{baseName(fileA.fileName)}</p>
+          <SpreadsheetPreview
+            file={fileA}
+            side="A"
+            keyPairs={validatedPairsForPreview}
+            amountCol={amountColA}
+            activeSelection={activeSelection}
+            onColumnClick={(colIdx) => handleColumnClick("A", colIdx)}
+          />
+        </div>
+        <div>
+          <p className="text-sm font-medium mb-1.5">{baseName(fileB.fileName)}</p>
+          <SpreadsheetPreview
+            file={fileB}
+            side="B"
+            keyPairs={validatedPairsForPreview}
+            amountCol={amountColB}
+            activeSelection={activeSelection}
+            onColumnClick={(colIdx) => handleColumnClick("B", colIdx)}
+          />
+        </div>
+      </div>
 
       {/* Amount column */}
       <Card>
@@ -560,7 +625,7 @@ export function ColumnsStep({
                 ? getColName(fileA, amountColA)
                 : `Choisir dans ${baseName(fileA.fileName)}`}
             </button>
-            <span className="text-muted-foreground text-sm flex-shrink-0">↔</span>
+            <span className="text-muted-foreground text-sm flex-shrink-0">&#8596;</span>
             <button
               onClick={() => setActiveSelection({ type: "amount", side: "B" })}
               className={cn(
@@ -586,10 +651,35 @@ export function ColumnsStep({
                 }}
                 className="h-7 w-7 p-0 flex-shrink-0 text-muted-foreground"
               >
-                ✕
+                &#10005;
               </Button>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Deduplication */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Options</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="dedup"
+              checked={deduplication}
+              onCheckedChange={onDeduplicationChange}
+            />
+            <Label htmlFor="dedup">
+              Dédupliquer les lignes ayant la même clé
+            </Label>
+          </div>
+          {deduplication && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Les lignes en double basées sur la clé définie seront regroupées.
+              Seule la première occurrence sera utilisée.
+            </p>
+          )}
         </CardContent>
       </Card>
 
