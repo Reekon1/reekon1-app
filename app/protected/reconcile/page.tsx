@@ -7,16 +7,20 @@ import { UploadStep } from "@/components/reconcile/upload-step";
 import { ScopeStep } from "@/components/reconcile/scope-step";
 import { ConfigurationStep, type ConfigurationConfig } from "@/components/reconcile/configuration-step";
 import { ResultsDashboard } from "@/components/reconcile/results-dashboard";
+import { ManualReconciliation } from "@/components/reconcile/manual-reconciliation";
 import { parseFile } from "@/lib/reconciliation/parser";
 import { reconcile } from "@/lib/reconciliation/engine";
 import { getTemplate } from "@/lib/actions/templates";
 import { fromTemplateConfig } from "@/lib/types/template";
+import { computeSuggestionsAsync, type SimilaritySuggestion } from "@/lib/reconciliation/similarity";
 import type { TemplateConfig } from "@/lib/types/template";
 import {
   toParsedFile,
   type RawParsedFile,
   type ReconciliationConfig,
   type ReconciliationResult,
+  type UniqueRow,
+  type ManualMatch,
 } from "@/lib/reconciliation/types";
 
 const STEPS = [
@@ -54,7 +58,7 @@ function ReconcilePageInner() {
   const [fileA, setFileA] = useState<FileState>(initialFileState);
   const [fileB, setFileB] = useState<FileState>(initialFileState);
 
-  // Scope state (lifted from configure-step)
+  // Scope state
   const [excludeFooterA, setExcludeFooterA] = useState(0);
   const [excludeFooterB, setExcludeFooterB] = useState(0);
   const [deduplication, setDeduplication] = useState(false);
@@ -64,6 +68,14 @@ function ReconcilePageInner() {
   const [result, setResult] = useState<ReconciliationResult | null>(null);
   const [lastConfig, setLastConfig] = useState<ReconciliationConfig | null>(null);
   const [templateConfig, setTemplateConfig] = useState<TemplateConfig | null>(null);
+
+  // Manual reconciliation state
+  const [manualStep, setManualStep] = useState<"none" | "computing" | "selecting" | "done">("none");
+  const [suggestions, setSuggestions] = useState<SimilaritySuggestion[]>([]);
+  const [manualMatches, setManualMatches] = useState<ManualMatch[]>([]);
+  const [capturedUniqueA, setCapturedUniqueA] = useState<UniqueRow[]>([]);
+  const [capturedUniqueB, setCapturedUniqueB] = useState<UniqueRow[]>([]);
+  const [computeProgress, setComputeProgress] = useState({ current: 0, total: 0 });
 
   // Track headers to detect changes and reset columns config
   const prevHeadersRef = useRef<string>("");
@@ -109,7 +121,6 @@ function ReconcilePageInner() {
     if (parsedA && parsedB) {
       const headersSignature = parsedA.headers.join("\0") + "||" + parsedB.headers.join("\0");
       if (prevHeadersRef.current && prevHeadersRef.current !== headersSignature) {
-        // Headers changed — force remount of ConfigurationStep
         setColumnsKey((k) => k + 1);
       }
       prevHeadersRef.current = headersSignature;
@@ -117,12 +128,12 @@ function ReconcilePageInner() {
   }, [parsedA, parsedB]);
 
   const handleFileSelect = useCallback(
-    async (key: "A" | "B", file: File) => {
+    async (key: "A" | "B", file: File, sheetName?: string) => {
       const setter = key === "A" ? setFileA : setFileB;
       setter({ file, raw: null, headerRowIndex: 0, error: null, isLoading: true });
 
       try {
-        const raw = await parseFile(file);
+        const raw = await parseFile(file, sheetName);
         setter({ file, raw, headerRowIndex: 0, error: null, isLoading: false });
       } catch (err) {
         setter({
@@ -138,6 +149,15 @@ function ReconcilePageInner() {
       }
     },
     []
+  );
+
+  const handleSheetSelect = useCallback(
+    async (key: "A" | "B", sheetName: string) => {
+      const fileState = key === "A" ? fileA : fileB;
+      if (!fileState.file) return;
+      await handleFileSelect(key, fileState.file, sheetName);
+    },
+    [fileA, fileB, handleFileSelect]
   );
 
   const handleFileRemove = useCallback((key: "A" | "B") => {
@@ -169,6 +189,10 @@ function ReconcilePageInner() {
         setResult(res);
         setLastConfig(config);
         setShowResults(true);
+        // Reset manual reconciliation state
+        setManualStep("none");
+        setSuggestions([]);
+        setManualMatches([]);
       } catch (err) {
         console.error("Reconciliation error:", err);
       } finally {
@@ -177,6 +201,48 @@ function ReconcilePageInner() {
     },
     [parsedA, parsedB, excludeFooterA, excludeFooterB, deduplication]
   );
+
+  const handleStartManualReconciliation = useCallback(async () => {
+    if (!result) return;
+
+    // Capture unique rows at this moment (stale reference guard)
+    const captA = [...result.uniqueA];
+    const captB = [...result.uniqueB];
+    setCapturedUniqueA(captA);
+    setCapturedUniqueB(captB);
+
+    setManualStep("computing");
+    setComputeProgress({ current: 0, total: captA.length });
+
+    const sug = await computeSuggestionsAsync(
+      captA,
+      captB,
+      (current, total) => setComputeProgress({ current, total }),
+    );
+
+    setSuggestions(sug);
+    setManualStep("selecting");
+  }, [result]);
+
+  const handleManualConfirm = useCallback(
+    (selectedPairs: SimilaritySuggestion[]) => {
+      const matches: ManualMatch[] = selectedPairs.map((s) => ({
+        keyA: s.keyA,
+        keyB: s.keyB,
+        rowA: capturedUniqueA[s.indexA]?.row ?? [],
+        rowB: capturedUniqueB[s.indexB]?.row ?? [],
+        similarity: s.similarity,
+      }));
+      setManualMatches(matches);
+      setManualStep("done");
+    },
+    [capturedUniqueA, capturedUniqueB]
+  );
+
+  const handleManualSkip = useCallback(() => {
+    setManualStep("done");
+    setManualMatches([]);
+  }, []);
 
   const handleNewReconciliation = useCallback(() => {
     setResult(null);
@@ -189,6 +255,9 @@ function ReconcilePageInner() {
     setExcludeFooterA(0);
     setExcludeFooterB(0);
     setDeduplication(false);
+    setManualStep("none");
+    setSuggestions([]);
+    setManualMatches([]);
     if (templateId) {
       router.replace("/protected/reconcile");
     }
@@ -204,7 +273,21 @@ function ReconcilePageInner() {
           fileB={parsedB}
           config={lastConfig}
           onNewReconciliation={handleNewReconciliation}
+          onManualReconciliation={handleStartManualReconciliation}
+          manualMatches={manualMatches.length > 0 ? manualMatches : undefined}
+          manualStep={manualStep}
+          computeProgress={computeProgress}
         />
+
+        {manualStep === "selecting" && (
+          <ManualReconciliation
+            suggestions={suggestions}
+            uniqueA={capturedUniqueA}
+            uniqueB={capturedUniqueB}
+            onConfirm={handleManualConfirm}
+            onSkip={handleManualSkip}
+          />
+        )}
       </div>
     );
   }
@@ -221,6 +304,7 @@ function ReconcilePageInner() {
             onFileRemove={handleFileRemove}
             onNext={() => setCurrentStep(1)}
             hasTemplate={!!templateConfig}
+            onSheetSelect={handleSheetSelect}
           />
         );
       case 1:

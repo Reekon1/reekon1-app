@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { generateReport, downloadBlob } from "@/lib/reconciliation/report";
-import type { ParsedFile, ReconciliationConfig, ReconciliationResult } from "@/lib/reconciliation/types";
+import type { ParsedFile, ReconciliationConfig, ReconciliationResult, ManualMatch } from "@/lib/reconciliation/types";
 import { SaveTemplateDialog } from "@/components/reconcile/save-template-dialog";
 
 interface ResultsDashboardProps {
@@ -18,6 +18,10 @@ interface ResultsDashboardProps {
   fileB: ParsedFile;
   config: ReconciliationConfig;
   onNewReconciliation: () => void;
+  onManualReconciliation?: () => void;
+  manualMatches?: ManualMatch[];
+  manualStep?: "none" | "computing" | "selecting" | "done";
+  computeProgress?: { current: number; total: number };
 }
 
 function baseName(fileName: string) {
@@ -123,25 +127,26 @@ export function ResultsDashboard({
   fileB,
   config,
   onNewReconciliation,
+  onManualReconciliation,
+  manualMatches,
+  manualStep = "none",
+  computeProgress,
 }: ResultsDashboardProps) {
   const s = result.summary;
-  const [reportBlob, setReportBlob] = useState<Blob | null>(null);
-  const autoDownloaded = useRef(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const manualCount = manualMatches?.length ?? 0;
+  const hasUnmatched = s.uniqueA > 0 && s.uniqueB > 0;
+  const isDone = manualStep === "done" || !hasUnmatched;
 
-  // Generate report and auto-download
-  useEffect(() => {
-    generateReport(result, fileA, fileB).then((blob) => {
-      setReportBlob(blob);
-      if (!autoDownloaded.current) {
-        autoDownloaded.current = true;
-        downloadBlob(blob);
-      }
-    });
-  }, [result, fileA, fileB]);
-
-  const handleDownload = () => {
-    if (reportBlob) downloadBlob(reportBlob);
-  };
+  const handleDownload = useCallback(async () => {
+    setIsGenerating(true);
+    try {
+      const blob = await generateReport(result, fileA, fileB, manualMatches);
+      downloadBlob(blob);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [result, fileA, fileB, manualMatches]);
 
   // Variance table data
   const varianceHeaders = ["Clé", `Montant ${fileA.fileName}`, `Montant ${fileB.fileName}`, "Variance"];
@@ -171,13 +176,13 @@ export function ResultsDashboard({
             <MatchRateIndicator rate={s.matchRate} />
           </div>
         </div>
-        <Button onClick={handleDownload} disabled={!reportBlob}>
-          Télécharger le rapport Excel
+        <Button onClick={handleDownload} disabled={isGenerating}>
+          {isGenerating ? "Génération..." : "Télécharger le rapport Excel"}
         </Button>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-2 ${manualCount > 0 ? "md:grid-cols-5" : "md:grid-cols-4"} gap-4`}>
         <Card className="border-green-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-3xl text-green-600 text-center">
@@ -218,6 +223,18 @@ export function ResultsDashboard({
             <p className="text-sm text-muted-foreground">Uniques {baseName(fileB.fileName)}</p>
           </CardContent>
         </Card>
+        {manualCount > 0 && (
+          <Card className="border-green-200">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-3xl text-green-600 text-center">
+                {manualCount}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-center">
+              <p className="text-sm text-muted-foreground">Manuels</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <p className="text-xs text-muted-foreground">
@@ -225,6 +242,40 @@ export function ResultsDashboard({
         {s.duplicatesA + s.duplicatesB > 0 &&
           ` · ${s.duplicatesA + s.duplicatesB} doublons supprimés`}
       </p>
+
+      {/* Manual reconciliation status */}
+      {manualStep === "computing" && computeProgress && (
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+          <p className="text-sm text-blue-700">
+            Calcul des suggestions... {computeProgress.current}/{computeProgress.total} lignes analysées
+          </p>
+          <div className="mt-2 h-2 bg-blue-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-blue-500 rounded-full transition-all"
+              style={{ width: `${(computeProgress.current / computeProgress.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {manualStep === "done" && manualCount > 0 && (
+        <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+          <p className="text-sm text-green-700 font-medium">
+            {manualCount} paire{manualCount !== 1 ? "s" : ""} rapprochée{manualCount !== 1 ? "s" : ""} manuellement
+          </p>
+        </div>
+      )}
+
+      {/* Manual reconciliation button */}
+      {hasUnmatched && manualStep === "none" && (
+        <Button
+          variant="outline"
+          onClick={onManualReconciliation}
+          className="self-start"
+        >
+          Rapprochement manuel ({s.uniqueA + s.uniqueB} lignes non rapprochées)
+        </Button>
+      )}
 
       {/* Detail tables */}
       <DetailTable

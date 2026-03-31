@@ -20,6 +20,7 @@ export interface ConfigurationConfig {
   amountColumnA: number | null;
   amountColumnB: number | null;
   keyTransforms?: KeyTransform[];
+  keySeparator?: string;
 }
 
 interface ConfigurationStepProps {
@@ -36,6 +37,7 @@ interface ConfigurationStepProps {
     amountColumnA: number | null;
     amountColumnB: number | null;
     keyTransforms?: KeyTransform[];
+    keySeparator?: string;
   };
   warnings?: string[];
 }
@@ -269,6 +271,9 @@ export function ConfigurationStep({
   const [amountColB, setAmountColB] = useState<number | null>(
     initialConfig?.amountColumnB ?? null
   );
+  const [keySeparator, setKeySeparator] = useState(
+    initialConfig?.keySeparator ?? ""
+  );
   const [error, setError] = useState<string | null>(null);
   const [activeSelection, setActiveSelection] = useState<ActiveSelection>(
     // If no initial config, auto-start first key creation
@@ -364,6 +369,7 @@ export function ConfigurationStep({
       amountColumnA: amountColA,
       amountColumnB: amountColB,
       ...(hasNonDefault ? { keyTransforms: transforms } : {}),
+      ...(keySeparator ? { keySeparator } : {}),
     };
 
     onSubmit(config);
@@ -680,6 +686,23 @@ export function ConfigurationStep({
               Seule la première occurrence sera utilisée.
             </p>
           )}
+          <div className="mt-4 pt-4 border-t">
+            <Label htmlFor="keySeparator">
+              Séparateur de clé
+            </Label>
+            <input
+              id="keySeparator"
+              type="text"
+              value={keySeparator}
+              onChange={(e) => setKeySeparator(e.target.value)}
+              placeholder={`Ex: " - ", "_", laisser vide pour concaténation directe`}
+              className="mt-1 w-full text-sm border rounded px-3 py-2"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Caractère(s) inséré(s) entre les colonnes clés lors de la concaténation.
+              Choisissez un séparateur qui n&apos;apparaît pas dans vos données.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
