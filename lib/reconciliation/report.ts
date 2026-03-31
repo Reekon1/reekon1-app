@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import type {
   ParsedFile,
   ReconciliationResult,
+  ManualMatch,
 } from "./types";
 
 function formatDate(): string {
@@ -11,13 +12,34 @@ function formatDate(): string {
   return `${d}-${t}`;
 }
 
+function sanitizeCell(value: unknown): string | number {
+  if (typeof value === "number") return value;
+  const str = String(value ?? "");
+  // Strip XML-invalid control characters (keep tab, newline, CR)
+  return str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+}
+
+function padRow(row: (string | number)[], targetLength: number): (string | number)[] {
+  if (row.length >= targetLength) return row;
+  return [...row, ...Array(targetLength - row.length).fill("")];
+}
+
 export async function generateReport(
   result: ReconciliationResult,
   fileA: ParsedFile,
-  fileB: ParsedFile
+  fileB: ParsedFile,
+  manualMatches?: ManualMatch[]
 ): Promise<Blob> {
   const workbook = new ExcelJS.Workbook();
   const s = result.summary;
+
+  // Recalculate match rate including manual matches
+  const manualCount = manualMatches?.length ?? 0;
+  const totalMatched = s.exactMatches + s.amountVariances + manualCount;
+  const adjustedMatchRate =
+    s.totalA + s.totalB > 0
+      ? Math.round((totalMatched * 2) / (s.totalA + s.totalB) * 10000) / 100
+      : 0;
 
   // --- Sheet 1: Synthèse ---
   const synthese = workbook.addWorksheet("Synthèse");
@@ -27,18 +49,25 @@ export async function generateReport(
     { header: "Valeur", key: "value", width: 20 },
   ];
 
-  const summaryRows = [
+  const summaryRows: { metric: string; value: string | number }[] = [
     { metric: "Fichier Système A", value: fileA.fileName },
     { metric: "Fichier Système B", value: fileB.fileName },
     { metric: "Lignes Système A", value: s.totalA },
     { metric: "Lignes Système B", value: s.totalB },
     { metric: "", value: "" },
-    { metric: "Taux de correspondance", value: `${s.matchRate}%` },
+    { metric: "Taux de correspondance", value: `${adjustedMatchRate}%` },
     { metric: "Correspondances exactes", value: s.exactMatches },
     { metric: "Écarts de montant", value: s.amountVariances },
-    { metric: "Lignes uniques Système A", value: s.uniqueA },
-    { metric: "Lignes uniques Système B", value: s.uniqueB },
   ];
+
+  if (manualCount > 0) {
+    summaryRows.push({ metric: "Correspondances manuelles", value: manualCount });
+  }
+
+  summaryRows.push(
+    { metric: "Lignes uniques Système A", value: s.uniqueA - manualCount },
+    { metric: "Lignes uniques Système B", value: s.uniqueB - manualCount },
+  );
 
   if (s.duplicatesA + s.duplicatesB > 0) {
     summaryRows.push({ metric: "", value: "" });
@@ -48,7 +77,6 @@ export async function generateReport(
 
   summaryRows.forEach((row) => synthese.addRow(row));
 
-  // Style header
   synthese.getRow(1).font = { bold: true };
   synthese.getRow(1).fill = {
     type: "pattern",
@@ -59,7 +87,8 @@ export async function generateReport(
   // --- Sheet 2: Écarts Système A ---
   const sheetA = workbook.addWorksheet("Écarts Système A");
   const headersA = ["Statut", "Clé", ...fileA.headers, "Variance"];
-  sheetA.addRow(headersA);
+  const maxColsA = headersA.length;
+  sheetA.addRow(headersA.map(sanitizeCell));
   sheetA.getRow(1).font = { bold: true };
   sheetA.getRow(1).fill = {
     type: "pattern",
@@ -67,14 +96,29 @@ export async function generateReport(
     fgColor: { argb: "FFE2E8F0" },
   };
 
+  // Manual matches in A sheet
+  if (manualMatches) {
+    for (const m of manualMatches) {
+      const rowData = padRow(
+        ["Manuel", sanitizeCell(m.keyA), ...m.rowA.map(sanitizeCell), ""],
+        maxColsA
+      );
+      const row = sheetA.addRow(rowData);
+      row.getCell(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFD1FAE5" }, // green-100
+      };
+    }
+  }
+
   // Amount variances from A's perspective
   for (const v of result.amountVariances) {
-    const row = sheetA.addRow([
-      "Écart de montant",
-      v.key,
-      ...v.rowA,
-      v.variance,
-    ]);
+    const rowData = padRow(
+      ["Écart de montant", sanitizeCell(v.key), ...v.rowA.map(sanitizeCell), v.variance],
+      maxColsA
+    );
+    const row = sheetA.addRow(rowData);
     row.getCell(1).fill = {
       type: "pattern",
       pattern: "solid",
@@ -82,9 +126,15 @@ export async function generateReport(
     };
   }
 
-  // Unique A rows
+  // Unique A rows (excluding manually matched)
+  const manualKeySetA = new Set(manualMatches?.map((m) => m.keyA) ?? []);
   for (const u of result.uniqueA) {
-    const row = sheetA.addRow(["Absent de B", u.key, ...u.row, ""]);
+    if (manualKeySetA.has(u.key)) continue;
+    const rowData = padRow(
+      ["Absent de B", sanitizeCell(u.key), ...u.row.map(sanitizeCell), ""],
+      maxColsA
+    );
+    const row = sheetA.addRow(rowData);
     row.getCell(1).fill = {
       type: "pattern",
       pattern: "solid",
@@ -92,7 +142,6 @@ export async function generateReport(
     };
   }
 
-  // Auto-width
   sheetA.columns.forEach((col) => {
     col.width = Math.max(12, (col.header?.toString().length ?? 0) + 4);
   });
@@ -100,7 +149,8 @@ export async function generateReport(
   // --- Sheet 3: Écarts Système B ---
   const sheetB = workbook.addWorksheet("Écarts Système B");
   const headersB = ["Statut", "Clé", ...fileB.headers, "Variance"];
-  sheetB.addRow(headersB);
+  const maxColsB = headersB.length;
+  sheetB.addRow(headersB.map(sanitizeCell));
   sheetB.getRow(1).font = { bold: true };
   sheetB.getRow(1).fill = {
     type: "pattern",
@@ -108,14 +158,29 @@ export async function generateReport(
     fgColor: { argb: "FFE2E8F0" },
   };
 
+  // Manual matches in B sheet
+  if (manualMatches) {
+    for (const m of manualMatches) {
+      const rowData = padRow(
+        ["Manuel", sanitizeCell(m.keyB), ...m.rowB.map(sanitizeCell), ""],
+        maxColsB
+      );
+      const row = sheetB.addRow(rowData);
+      row.getCell(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFD1FAE5" },
+      };
+    }
+  }
+
   // Amount variances from B's perspective
   for (const v of result.amountVariances) {
-    const row = sheetB.addRow([
-      "Écart de montant",
-      v.key,
-      ...v.rowB,
-      -v.variance,
-    ]);
+    const rowData = padRow(
+      ["Écart de montant", sanitizeCell(v.key), ...v.rowB.map(sanitizeCell), -v.variance],
+      maxColsB
+    );
+    const row = sheetB.addRow(rowData);
     row.getCell(1).fill = {
       type: "pattern",
       pattern: "solid",
@@ -123,9 +188,15 @@ export async function generateReport(
     };
   }
 
-  // Unique B rows
+  // Unique B rows (excluding manually matched)
+  const manualKeySetB = new Set(manualMatches?.map((m) => m.keyB) ?? []);
   for (const u of result.uniqueB) {
-    const row = sheetB.addRow(["Absent de A", u.key, ...u.row, ""]);
+    if (manualKeySetB.has(u.key)) continue;
+    const rowData = padRow(
+      ["Absent de A", sanitizeCell(u.key), ...u.row.map(sanitizeCell), ""],
+      maxColsB
+    );
+    const row = sheetB.addRow(rowData);
     row.getCell(1).fill = {
       type: "pattern",
       pattern: "solid",
