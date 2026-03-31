@@ -18,6 +18,8 @@ export function reconcile(
   fileB: ParsedFile,
   config: ReconciliationConfig
 ): ReconciliationResult {
+  const separator = config.keySeparator ?? "";
+
   // 1. Apply exclusions
   let rowsA = applyExclusions(
     fileA.rows,
@@ -30,13 +32,13 @@ export function reconcile(
     config.excludeFooterRowsB
   );
 
-  // 2. Deduplication
+  // 2. Deduplication (using transforms + separator for consistency)
   let duplicatesA = 0;
   let duplicatesB = 0;
 
   if (config.deduplication) {
-    [rowsA, duplicatesA] = deduplicateRows(rowsA, config.keyColumnsA);
-    [rowsB, duplicatesB] = deduplicateRows(rowsB, config.keyColumnsB);
+    [rowsA, duplicatesA] = deduplicateRows(rowsA, config.keyColumnsA, config.keyTransforms, separator);
+    [rowsB, duplicatesB] = deduplicateRows(rowsB, config.keyColumnsB, config.keyTransforms, separator);
   }
 
   const totalA = rowsA.length;
@@ -45,14 +47,14 @@ export function reconcile(
   // 3. Build key maps
   const mapA = new Map<string, string[][]>();
   for (const row of rowsA) {
-    const key = buildKeyWithTransforms(row, config.keyColumnsA, config.keyTransforms);
+    const key = buildKeyWithTransforms(row, config.keyColumnsA, config.keyTransforms, separator);
     if (!mapA.has(key)) mapA.set(key, []);
     mapA.get(key)!.push(row);
   }
 
   const mapB = new Map<string, string[][]>();
   for (const row of rowsB) {
-    const key = buildKeyWithTransforms(row, config.keyColumnsB, config.keyTransforms);
+    const key = buildKeyWithTransforms(row, config.keyColumnsB, config.keyTransforms, separator);
     if (!mapB.has(key)) mapB.set(key, []);
     mapB.get(key)!.push(row);
   }
@@ -126,6 +128,7 @@ export function reconcile(
       matchRate: Math.round(matchRate * 10000) / 100,
       duplicatesA,
       duplicatesB,
+      manualMatches: 0,
     },
     matches,
     amountVariances,

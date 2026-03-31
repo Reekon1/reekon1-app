@@ -20,6 +20,7 @@ export interface TemplateConfig {
   excludeFooterRowsB: number;
   deduplication: boolean;
   keyTransforms?: KeyTransform[];
+  keySeparator?: string;
 }
 
 export interface SavedTemplate {
@@ -52,6 +53,7 @@ export function toTemplateConfig(
     excludeFooterRowsB: config.excludeFooterRowsB,
     deduplication: config.deduplication,
     ...(config.keyTransforms ? { keyTransforms: config.keyTransforms } : {}),
+    ...(config.keySeparator ? { keySeparator: config.keySeparator } : {}),
   };
 }
 
@@ -93,6 +95,7 @@ export function fromTemplateConfig(
       excludeFooterRowsB: template.excludeFooterRowsB,
       deduplication: template.deduplication,
       ...(template.keyTransforms ? { keyTransforms: template.keyTransforms } : {}),
+      ...(template.keySeparator ? { keySeparator: template.keySeparator } : {}),
     },
     warnings,
   };

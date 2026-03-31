@@ -1,7 +1,17 @@
+export interface ParseWarning {
+  message: string;
+  errorCount: number;
+  expectedRows: number;
+  actualRows: number;
+}
+
 export interface RawParsedFile {
   fileName: string;
   rawRows: string[][];
   totalColumns: number;
+  warnings?: ParseWarning[];
+  sheetNames?: string[];
+  detectedEncoding?: string;
 }
 
 export interface ParsedFile {
@@ -44,6 +54,7 @@ export interface ReconciliationConfig {
   excludeFooterRowsB: number;
   deduplication: boolean;
   keyTransforms?: KeyTransform[];
+  keySeparator?: string;
 }
 
 export interface ReconciliationSummary {
@@ -56,6 +67,7 @@ export interface ReconciliationSummary {
   matchRate: number;
   duplicatesA: number;
   duplicatesB: number;
+  manualMatches: number;
 }
 
 export interface MatchedRow {
@@ -76,6 +88,14 @@ export interface VarianceRow {
 export interface UniqueRow {
   key: string;
   row: string[];
+}
+
+export interface ManualMatch {
+  keyA: string;
+  keyB: string;
+  rowA: string[];
+  rowB: string[];
+  similarity: number;
 }
 
 export interface ReconciliationResult {

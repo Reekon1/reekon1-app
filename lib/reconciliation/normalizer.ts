@@ -14,8 +14,8 @@ export function normalizeKey(value: string): string {
 /**
  * Build a composite key from multiple column values.
  */
-export function buildKey(row: string[], columnIndices: number[]): string {
-  return columnIndices.map((i) => normalizeKey(row[i] ?? "")).join("||");
+export function buildKey(row: string[], columnIndices: number[], separator: string = ""): string {
+  return columnIndices.map((i) => normalizeKey(row[i] ?? "")).join(separator);
 }
 
 function applyAlphanumericOnly(value: string): string {
@@ -49,14 +49,15 @@ export function applyTransform(value: string, transform: import("./types").KeyTr
 export function buildKeyWithTransforms(
   row: string[],
   columnIndices: number[],
-  transforms?: import("./types").KeyTransform[]
+  transforms?: import("./types").KeyTransform[],
+  separator: string = ""
 ): string {
   return columnIndices
     .map((colIdx, pos) => {
       const transform = transforms?.[pos] ?? "default";
       return applyTransform(row[colIdx] ?? "", transform);
     })
-    .join("||");
+    .join(separator);
 }
 
 /**
@@ -111,19 +112,22 @@ export function applyExclusions(
 }
 
 /**
- * Deduplicate rows by key. Keeps the first occurrence.
+ * Deduplicate rows by key using transforms + separator for consistency
+ * with the matching algorithm. Keeps the first occurrence.
  * Returns [deduplicatedRows, duplicateCount].
  */
 export function deduplicateRows(
   rows: string[][],
-  keyColumnIndices: number[]
+  keyColumnIndices: number[],
+  transforms?: import("./types").KeyTransform[],
+  separator: string = ""
 ): [string[][], number] {
   const seen = new Set<string>();
   const unique: string[][] = [];
   let duplicates = 0;
 
   for (const row of rows) {
-    const key = buildKey(row, keyColumnIndices);
+    const key = buildKeyWithTransforms(row, keyColumnIndices, transforms, separator);
     if (seen.has(key)) {
       duplicates++;
     } else {

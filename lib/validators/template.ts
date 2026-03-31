@@ -18,6 +18,7 @@ export const templateConfigSchema = z.object({
   excludeFooterRowsB: z.number().int().min(0),
   deduplication: z.boolean(),
   keyTransforms: z.array(keyTransformSchema).optional(),
+  keySeparator: z.string().optional(),
 });
 
 export const saveTemplateSchema = z.object({
