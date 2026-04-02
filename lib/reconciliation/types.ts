@@ -91,6 +91,8 @@ export interface UniqueRow {
 }
 
 export interface ManualMatch {
+  indexA: number;
+  indexB: number;
   keyA: string;
   keyB: string;
   rowA: string[];

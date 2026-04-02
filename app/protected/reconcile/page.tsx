@@ -227,6 +227,8 @@ function ReconcilePageInner() {
   const handleManualConfirm = useCallback(
     (selectedPairs: SimilaritySuggestion[]) => {
       const matches: ManualMatch[] = selectedPairs.map((s) => ({
+        indexA: s.indexA,
+        indexB: s.indexB,
         keyA: s.keyA,
         keyB: s.keyB,
         rowA: capturedUniqueA[s.indexA]?.row ?? [],

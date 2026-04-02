@@ -252,7 +252,7 @@ export function ResultsDashboard({
           <div className="mt-2 h-2 bg-blue-100 rounded-full overflow-hidden">
             <div
               className="h-full bg-blue-500 rounded-full transition-all"
-              style={{ width: `${(computeProgress.current / computeProgress.total) * 100}%` }}
+              style={{ width: `${(computeProgress.current / Math.max(computeProgress.total, 1)) * 100}%` }}
             />
           </div>
         </div>

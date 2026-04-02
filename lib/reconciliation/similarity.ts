@@ -71,48 +71,6 @@ export function similarity(a: string, b: string): number {
 }
 
 /**
- * Compute similarity suggestions between unmatched rows.
- * Single pass producing 3 buckets: >90% (auto), 40-90% (manual), <40% (ignored).
- */
-export function computeSuggestions(
-  uniqueA: UniqueRow[],
-  uniqueB: UniqueRow[],
-  options: { minSimilarity?: number; maxSuggestionsPerRow?: number } = {}
-): SimilaritySuggestion[] {
-  const minSim = options.minSimilarity ?? 40;
-  const maxPerRow = options.maxSuggestionsPerRow ?? 5;
-  const suggestions: SimilaritySuggestion[] = [];
-
-  for (let ia = 0; ia < uniqueA.length; ia++) {
-    const keyA = uniqueA[ia].key;
-    const rowSuggestions: SimilaritySuggestion[] = [];
-
-    for (let ib = 0; ib < uniqueB.length; ib++) {
-      const keyB = uniqueB[ib].key;
-      const sim = similarity(keyA, keyB);
-
-      if (sim >= minSim) {
-        rowSuggestions.push({
-          indexA: ia,
-          indexB: ib,
-          keyA,
-          keyB,
-          similarity: sim,
-        });
-      }
-    }
-
-    // Keep top N per row from A
-    rowSuggestions.sort((a, b) => b.similarity - a.similarity);
-    suggestions.push(...rowSuggestions.slice(0, maxPerRow));
-  }
-
-  // Sort all suggestions by similarity descending
-  suggestions.sort((a, b) => b.similarity - a.similarity);
-  return suggestions;
-}
-
-/**
  * Compute suggestions in batches to avoid blocking the UI thread.
  * Calls onProgress with the current progress (0-100).
  */

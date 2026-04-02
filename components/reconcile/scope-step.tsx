@@ -41,7 +41,7 @@ export function ScopeStep({
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">
-        Définissez la ligne d&apos;en-tête et les options de nettoyage pour chaque fichier
+        Sélectionnez la première et la dernière ligne à traiter pour chaque fichier
       </p>
 
       {/* Header row selection */}

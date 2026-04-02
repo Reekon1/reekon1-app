@@ -18,7 +18,7 @@ export function reconcile(
   fileB: ParsedFile,
   config: ReconciliationConfig
 ): ReconciliationResult {
-  const separator = config.keySeparator ?? "";
+  const separator = config.keySeparator ?? "||";
 
   // 1. Apply exclusions
   let rowsA = applyExclusions(

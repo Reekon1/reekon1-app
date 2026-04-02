@@ -39,7 +39,7 @@ export function DataPreview({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Cliquez sur la ligne qui contient les en-têtes de colonnes
+        Cliquez sur la <strong>première ligne</strong> à traiter (en-tête de colonnes)
       </p>
 
       <div className="border rounded-md overflow-auto max-h-96">

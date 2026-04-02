@@ -272,7 +272,7 @@ export function ConfigurationStep({
     initialConfig?.amountColumnB ?? null
   );
   const [keySeparator, setKeySeparator] = useState(
-    initialConfig?.keySeparator ?? ""
+    initialConfig?.keySeparator ?? "||"
   );
   const [error, setError] = useState<string | null>(null);
   const [activeSelection, setActiveSelection] = useState<ActiveSelection>(
@@ -369,7 +369,7 @@ export function ConfigurationStep({
       amountColumnA: amountColA,
       amountColumnB: amountColB,
       ...(hasNonDefault ? { keyTransforms: transforms } : {}),
-      ...(keySeparator ? { keySeparator } : {}),
+      ...(keySeparator != null ? { keySeparator } : {}),
     };
 
     onSubmit(config);

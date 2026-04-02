@@ -11,13 +11,6 @@ export function normalizeKey(value: string): string {
     .toLowerCase();
 }
 
-/**
- * Build a composite key from multiple column values.
- */
-export function buildKey(row: string[], columnIndices: number[], separator: string = ""): string {
-  return columnIndices.map((i) => normalizeKey(row[i] ?? "")).join(separator);
-}
-
 function applyAlphanumericOnly(value: string): string {
   return normalizeKey(value).replace(/[^a-z0-9]/g, "");
 }
@@ -50,7 +43,7 @@ export function buildKeyWithTransforms(
   row: string[],
   columnIndices: number[],
   transforms?: import("./types").KeyTransform[],
-  separator: string = ""
+  separator: string = "||"
 ): string {
   return columnIndices
     .map((colIdx, pos) => {
@@ -120,7 +113,7 @@ export function deduplicateRows(
   rows: string[][],
   keyColumnIndices: number[],
   transforms?: import("./types").KeyTransform[],
-  separator: string = ""
+  separator: string = "||"
 ): [string[][], number] {
   const seen = new Set<string>();
   const unique: string[][] = [];

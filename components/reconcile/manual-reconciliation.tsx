@@ -52,8 +52,15 @@ export function ManualReconciliation({
   // Pre-check suggestions > 90%
   const [selected, setSelected] = useState<Set<number>>(() => {
     const initial = new Set<number>();
+    const claimedA = new Set<number>();
+    const claimedB = new Set<number>();
+    // Suggestions are sorted by similarity desc — greedy 1:1 assignment
     suggestions.forEach((s, i) => {
-      if (s.similarity > 90) initial.add(i);
+      if (s.similarity > 90 && !claimedA.has(s.indexA) && !claimedB.has(s.indexB)) {
+        initial.add(i);
+        claimedA.add(s.indexA);
+        claimedB.add(s.indexB);
+      }
     });
     return initial;
   });

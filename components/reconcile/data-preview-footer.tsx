@@ -25,9 +25,10 @@ export function DataPreviewFooter({
 
   // Clamp excludeFooter defensively
   const clampedFooter = Math.min(excludeFooter, totalDataRows);
-  const firstExcludedIndex = totalDataRows - clampedFooter; // index in dataRows
+  // Last included data row index (when excludeFooter > 0)
+  const lastIncludedIndex = totalDataRows - clampedFooter - 1;
 
-  // Show last N rows (enough to see data + footer)
+  // Show last N rows (enough to see data + excluded rows)
   const visibleCount = Math.min(
     totalDataRows,
     PREVIEW_TAIL_ROWS + clampedFooter
@@ -48,11 +49,13 @@ export function DataPreviewFooter({
   }
 
   function handleClick(dataRowIndex: number) {
-    if (dataRowIndex === firstExcludedIndex && clampedFooter > 0) {
-      // Toggle off — clicking the boundary row clears exclusion
+    if (dataRowIndex === lastIncludedIndex && clampedFooter > 0) {
+      // Toggle off — re-clicking the selected row resets to include all
       onExcludeFooterChange(0);
     } else {
-      onExcludeFooterChange(totalDataRows - dataRowIndex);
+      // Exclude everything after the clicked row
+      const newExclude = totalDataRows - dataRowIndex - 1;
+      onExcludeFooterChange(Math.max(0, newExclude));
     }
   }
 
@@ -62,13 +65,13 @@ export function DataPreviewFooter({
         <h3 className="text-sm font-medium">{label}</h3>
         <span className="text-xs text-muted-foreground">
           {clampedFooter > 0
-            ? `${clampedFooter} ligne(s) exclue(s)`
-            : "Aucune exclusion"}
+            ? `Dernière ligne incluse : ligne ${headerRowIndex + 1 + lastIncludedIndex + 1} (${clampedFooter} ligne(s) exclue(s))`
+            : "Toutes les lignes incluses"}
         </span>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Cliquez sur la première ligne de pied de page à exclure
+        Cliquez sur la <strong>dernière ligne</strong> à inclure dans le rapprochement
       </p>
 
       {hiddenCount > 0 && (
@@ -82,9 +85,9 @@ export function DataPreviewFooter({
           <tbody>
             {visibleRows.map((row, i) => {
               const dataRowIndex = startIndex + i;
-              const isBoundary =
-                clampedFooter > 0 && dataRowIndex === firstExcludedIndex;
-              const isExcluded = dataRowIndex >= firstExcludedIndex && clampedFooter > 0;
+              const isLastIncluded =
+                clampedFooter > 0 && dataRowIndex === lastIncludedIndex;
+              const isExcluded = clampedFooter > 0 && dataRowIndex > lastIncludedIndex;
 
               // File row number (1-based): headerRowIndex + 1 (header) + dataRowIndex + 1
               const fileRowNumber = headerRowIndex + 1 + dataRowIndex + 1;
@@ -95,7 +98,7 @@ export function DataPreviewFooter({
                   onClick={() => handleClick(dataRowIndex)}
                   className={[
                     "border-b last:border-0 cursor-pointer transition-colors",
-                    isBoundary
+                    isLastIncluded
                       ? "bg-blue-50 hover:bg-blue-100"
                       : isExcluded
                         ? "bg-muted/30 opacity-50 hover:opacity-80 hover:bg-muted/50"
@@ -110,7 +113,7 @@ export function DataPreviewFooter({
                       key={colIndex}
                       className={[
                         "px-3 py-1.5 whitespace-nowrap",
-                        isBoundary
+                        isLastIncluded
                           ? "font-semibold text-blue-900"
                           : isExcluded
                             ? "text-muted-foreground italic text-xs"

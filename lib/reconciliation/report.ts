@@ -126,10 +126,11 @@ export async function generateReport(
     };
   }
 
-  // Unique A rows (excluding manually matched)
-  const manualKeySetA = new Set(manualMatches?.map((m) => m.keyA) ?? []);
-  for (const u of result.uniqueA) {
-    if (manualKeySetA.has(u.key)) continue;
+  // Unique A rows (excluding manually matched by index)
+  const manualIndexSetA = new Set(manualMatches?.map((m) => m.indexA) ?? []);
+  for (let ui = 0; ui < result.uniqueA.length; ui++) {
+    if (manualIndexSetA.has(ui)) continue;
+    const u = result.uniqueA[ui];
     const rowData = padRow(
       ["Absent de B", sanitizeCell(u.key), ...u.row.map(sanitizeCell), ""],
       maxColsA
@@ -188,10 +189,11 @@ export async function generateReport(
     };
   }
 
-  // Unique B rows (excluding manually matched)
-  const manualKeySetB = new Set(manualMatches?.map((m) => m.keyB) ?? []);
-  for (const u of result.uniqueB) {
-    if (manualKeySetB.has(u.key)) continue;
+  // Unique B rows (excluding manually matched by index)
+  const manualIndexSetB = new Set(manualMatches?.map((m) => m.indexB) ?? []);
+  for (let ui = 0; ui < result.uniqueB.length; ui++) {
+    if (manualIndexSetB.has(ui)) continue;
+    const u = result.uniqueB[ui];
     const rowData = padRow(
       ["Absent de A", sanitizeCell(u.key), ...u.row.map(sanitizeCell), ""],
       maxColsB
