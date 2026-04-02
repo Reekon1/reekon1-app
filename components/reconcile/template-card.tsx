@@ -22,7 +22,7 @@ function formatDate(dateStr: string): string {
 }
 
 export function TemplateCard({ template }: { template: SavedTemplate }) {
-  const keyCount = template.config.keyColumnsA.length;
+  const keyCount = template.config.keyMappings?.length ?? template.config.keyColumnsA.length;
   const hasAmount = template.config.amountColumnA !== null;
 
   return (

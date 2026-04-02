@@ -7,7 +7,7 @@ import type {
   UniqueRow,
 } from "./types";
 import {
-  buildKeyWithTransforms,
+  buildKeyFromMappings,
   parseAmount,
   applyExclusions,
   deduplicateRows,
@@ -18,7 +18,7 @@ export function reconcile(
   fileB: ParsedFile,
   config: ReconciliationConfig
 ): ReconciliationResult {
-  const separator = config.keySeparator ?? "||";
+  const { keyMappings } = config;
 
   // 1. Apply exclusions
   let rowsA = applyExclusions(
@@ -32,13 +32,13 @@ export function reconcile(
     config.excludeFooterRowsB
   );
 
-  // 2. Deduplication (using transforms + separator for consistency)
+  // 2. Deduplication
   let duplicatesA = 0;
   let duplicatesB = 0;
 
   if (config.deduplication) {
-    [rowsA, duplicatesA] = deduplicateRows(rowsA, config.keyColumnsA, config.keyTransforms, separator);
-    [rowsB, duplicatesB] = deduplicateRows(rowsB, config.keyColumnsB, config.keyTransforms, separator);
+    [rowsA, duplicatesA] = deduplicateRows(rowsA, keyMappings, "A");
+    [rowsB, duplicatesB] = deduplicateRows(rowsB, keyMappings, "B");
   }
 
   const totalA = rowsA.length;
@@ -47,14 +47,14 @@ export function reconcile(
   // 3. Build key maps
   const mapA = new Map<string, string[][]>();
   for (const row of rowsA) {
-    const key = buildKeyWithTransforms(row, config.keyColumnsA, config.keyTransforms, separator);
+    const key = buildKeyFromMappings(row, keyMappings, "A");
     if (!mapA.has(key)) mapA.set(key, []);
     mapA.get(key)!.push(row);
   }
 
   const mapB = new Map<string, string[][]>();
   for (const row of rowsB) {
-    const key = buildKeyWithTransforms(row, config.keyColumnsB, config.keyTransforms, separator);
+    const key = buildKeyFromMappings(row, keyMappings, "B");
     if (!mapB.has(key)) mapB.set(key, []);
     mapB.get(key)!.push(row);
   }

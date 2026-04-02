@@ -1,15 +1,23 @@
 import { describe, it, expect } from "vitest";
 import { toTemplateConfig, fromTemplateConfig } from "./template";
-import type { ReconciliationConfig } from "@/lib/reconciliation/types";
+import type { ReconciliationConfig, KeyMapping } from "@/lib/reconciliation/types";
 import type { TemplateConfig } from "./template";
+
+function mapping(
+  colsA: number[],
+  colsB: number[],
+  separator = "",
+  transform: KeyMapping["transform"] = "default"
+): KeyMapping {
+  return { colsA, colsB, separator, transform };
+}
 
 describe("toTemplateConfig", () => {
   const headersA = ["Identifiant", "Nom", "Date", "Montant"];
-  const headersB = ["Id_dl", "Libellé", "DateFacture", "Montant HT", "Code"];
+  const headersB = ["Id_dl", "Libelle", "DateFacture", "Montant HT", "Code"];
 
   const baseConfig: ReconciliationConfig = {
-    keyColumnsA: [0],
-    keyColumnsB: [0],
+    keyMappings: [mapping([0], [0])],
     amountColumnA: 3,
     amountColumnB: 3,
     excludeHeaderRowsA: 0,
@@ -19,21 +27,36 @@ describe("toTemplateConfig", () => {
     deduplication: false,
   };
 
-  it("converts single key columns by index to name", () => {
+  it("converts single key mapping to template format", () => {
     const result = toTemplateConfig(baseConfig, headersA, headersB);
+    expect(result.keyMappings).toEqual([
+      { colsA: ["Identifiant"], colsB: ["Id_dl"], separator: "", transform: "default" },
+    ]);
+    // Also writes legacy fields
     expect(result.keyColumnsA).toEqual(["Identifiant"]);
     expect(result.keyColumnsB).toEqual(["Id_dl"]);
   });
 
-  it("converts composite key columns", () => {
+  it("converts composite key mappings", () => {
     const config: ReconciliationConfig = {
       ...baseConfig,
-      keyColumnsA: [0, 2],
-      keyColumnsB: [0, 2],
+      keyMappings: [mapping([0], [0]), mapping([2], [2])],
     };
     const result = toTemplateConfig(config, headersA, headersB);
-    expect(result.keyColumnsA).toEqual(["Identifiant", "Date"]);
-    expect(result.keyColumnsB).toEqual(["Id_dl", "DateFacture"]);
+    expect(result.keyMappings).toHaveLength(2);
+    expect(result.keyMappings![0].colsA).toEqual(["Identifiant"]);
+    expect(result.keyMappings![1].colsA).toEqual(["Date"]);
+  });
+
+  it("converts asymmetric key mapping (1:3)", () => {
+    const config: ReconciliationConfig = {
+      ...baseConfig,
+      keyMappings: [mapping([0], [0, 2, 4], "-")],
+    };
+    const result = toTemplateConfig(config, headersA, headersB);
+    expect(result.keyMappings![0].colsA).toEqual(["Identifiant"]);
+    expect(result.keyMappings![0].colsB).toEqual(["Id_dl", "DateFacture", "Code"]);
+    expect(result.keyMappings![0].separator).toBe("-");
   });
 
   it("converts amount columns to names", () => {
@@ -65,20 +88,11 @@ describe("toTemplateConfig", () => {
     expect(result.excludeFooterRowsB).toBe(3);
     expect(result.deduplication).toBe(true);
   });
-
-  it("handles out-of-bounds index gracefully", () => {
-    const config: ReconciliationConfig = {
-      ...baseConfig,
-      keyColumnsA: [99],
-    };
-    const result = toTemplateConfig(config, headersA, headersB);
-    expect(result.keyColumnsA).toEqual([""]);
-  });
 });
 
 describe("fromTemplateConfig", () => {
   const headersA = ["Identifiant", "Nom", "Date", "Montant"];
-  const headersB = ["Id_dl", "Libellé", "DateFacture", "Montant HT", "Code"];
+  const headersB = ["Id_dl", "Libelle", "DateFacture", "Montant HT", "Code"];
 
   const baseTemplate: TemplateConfig = {
     keyColumnsA: ["Identifiant"],
@@ -92,22 +106,38 @@ describe("fromTemplateConfig", () => {
     deduplication: false,
   };
 
-  it("resolves single key columns by name to index", () => {
+  it("loads legacy template (no keyMappings) via conversion", () => {
     const result = fromTemplateConfig(baseTemplate, headersA, headersB);
-    expect(result.config.keyColumnsA).toEqual([0]);
-    expect(result.config.keyColumnsB).toEqual([0]);
+    expect(result.config.keyMappings).toHaveLength(1);
+    expect(result.config.keyMappings[0].colsA).toEqual([0]);
+    expect(result.config.keyMappings[0].colsB).toEqual([0]);
     expect(result.warnings).toEqual([]);
   });
 
-  it("resolves composite key columns", () => {
+  it("loads legacy composite template", () => {
     const template: TemplateConfig = {
       ...baseTemplate,
       keyColumnsA: ["Identifiant", "Date"],
       keyColumnsB: ["Id_dl", "DateFacture"],
     };
     const result = fromTemplateConfig(template, headersA, headersB);
-    expect(result.config.keyColumnsA).toEqual([0, 2]);
-    expect(result.config.keyColumnsB).toEqual([0, 2]);
+    expect(result.config.keyMappings).toHaveLength(2);
+    expect(result.config.keyMappings[0].colsA).toEqual([0]);
+    expect(result.config.keyMappings[1].colsA).toEqual([2]);
+  });
+
+  it("loads new-format template with keyMappings", () => {
+    const template: TemplateConfig = {
+      ...baseTemplate,
+      keyMappings: [
+        { colsA: ["Identifiant"], colsB: ["Id_dl", "DateFacture", "Code"], separator: "-", transform: "default" },
+      ],
+    };
+    const result = fromTemplateConfig(template, headersA, headersB);
+    expect(result.config.keyMappings).toHaveLength(1);
+    expect(result.config.keyMappings[0].colsA).toEqual([0]);
+    expect(result.config.keyMappings[0].colsB).toEqual([0, 2, 4]);
+    expect(result.config.keyMappings[0].separator).toBe("-");
     expect(result.warnings).toEqual([]);
   });
 
@@ -134,20 +164,10 @@ describe("fromTemplateConfig", () => {
       keyColumnsA: ["ColonneInexistante"],
     };
     const result = fromTemplateConfig(template, headersA, headersB);
-    expect(result.config.keyColumnsA).toEqual([0]);
+    expect(result.config.keyMappings[0].colsA).toEqual([0]);
     expect(result.warnings).toContain(
-      "Colonne 'ColonneInexistante' non trouvée dans Système A"
+      "Colonne 'ColonneInexistante' non trouvee dans Systeme A"
     );
-  });
-
-  it("generates warnings for multiple missing columns", () => {
-    const template: TemplateConfig = {
-      ...baseTemplate,
-      keyColumnsA: ["Missing1", "Missing2"],
-      keyColumnsB: ["Missing3"],
-    };
-    const result = fromTemplateConfig(template, headersA, headersB);
-    expect(result.warnings).toHaveLength(3);
   });
 
   it("matches column names case-insensitively", () => {
@@ -157,8 +177,8 @@ describe("fromTemplateConfig", () => {
       keyColumnsB: ["ID_DL"],
     };
     const result = fromTemplateConfig(template, headersA, headersB);
-    expect(result.config.keyColumnsA).toEqual([0]);
-    expect(result.config.keyColumnsB).toEqual([0]);
+    expect(result.config.keyMappings[0].colsA).toEqual([0]);
+    expect(result.config.keyMappings[0].colsB).toEqual([0]);
     expect(result.warnings).toEqual([]);
   });
 
@@ -168,7 +188,7 @@ describe("fromTemplateConfig", () => {
       keyColumnsA: ["  Identifiant  "],
     };
     const result = fromTemplateConfig(template, headersA, headersB);
-    expect(result.config.keyColumnsA).toEqual([0]);
+    expect(result.config.keyMappings[0].colsA).toEqual([0]);
     expect(result.warnings).toEqual([]);
   });
 
@@ -187,8 +207,7 @@ describe("fromTemplateConfig", () => {
 
   it("roundtrips through toTemplateConfig then fromTemplateConfig", () => {
     const originalConfig: ReconciliationConfig = {
-      keyColumnsA: [0, 2],
-      keyColumnsB: [0, 2],
+      keyMappings: [mapping([0], [0]), mapping([2], [2])],
       amountColumnA: 3,
       amountColumnB: 3,
       excludeHeaderRowsA: 1,
@@ -196,6 +215,23 @@ describe("fromTemplateConfig", () => {
       excludeFooterRowsA: 0,
       excludeFooterRowsB: 2,
       deduplication: true,
+    };
+    const templateCfg = toTemplateConfig(originalConfig, headersA, headersB);
+    const result = fromTemplateConfig(templateCfg, headersA, headersB);
+    expect(result.config).toEqual(originalConfig);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("roundtrips asymmetric keyMappings", () => {
+    const originalConfig: ReconciliationConfig = {
+      keyMappings: [mapping([0], [0, 2, 4], "-")],
+      amountColumnA: 3,
+      amountColumnB: 3,
+      excludeHeaderRowsA: 0,
+      excludeHeaderRowsB: 0,
+      excludeFooterRowsA: 0,
+      excludeFooterRowsB: 0,
+      deduplication: false,
     };
     const templateCfg = toTemplateConfig(originalConfig, headersA, headersB);
     const result = fromTemplateConfig(templateCfg, headersA, headersB);

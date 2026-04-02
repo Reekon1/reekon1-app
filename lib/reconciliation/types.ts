@@ -43,9 +43,15 @@ export type KeyTransform =
   | "extract_code_prefix"
   | "absolute_amount";
 
+export interface KeyMapping {
+  colsA: number[];
+  colsB: number[];
+  separator: string;
+  transform: KeyTransform;
+}
+
 export interface ReconciliationConfig {
-  keyColumnsA: number[];
-  keyColumnsB: number[];
+  keyMappings: KeyMapping[];
   amountColumnA: number | null;
   amountColumnB: number | null;
   excludeHeaderRowsA: number;
@@ -53,8 +59,6 @@ export interface ReconciliationConfig {
   excludeFooterRowsA: number;
   excludeFooterRowsB: number;
   deduplication: boolean;
-  keyTransforms?: KeyTransform[];
-  keySeparator?: string;
 }
 
 export interface ReconciliationSummary {

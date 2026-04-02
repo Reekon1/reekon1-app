@@ -105,22 +105,66 @@ export function applyExclusions(
 }
 
 /**
- * Deduplicate rows by key using transforms + separator for consistency
- * with the matching algorithm. Keeps the first occurrence.
+ * Convert legacy flat-array key config to KeyMapping[].
+ * Throws if array lengths don't match.
+ */
+export function legacyToKeyMappings(
+  keyColumnsA: number[],
+  keyColumnsB: number[],
+  keyTransforms?: import("./types").KeyTransform[],
+  keySeparator?: string
+): import("./types").KeyMapping[] {
+  if (keyColumnsA.length !== keyColumnsB.length) {
+    throw new Error(
+      `Mismatched key column arrays: A=${keyColumnsA.length}, B=${keyColumnsB.length}`
+    );
+  }
+  return keyColumnsA.map((colA, i) => ({
+    colsA: [colA],
+    colsB: [keyColumnsB[i]],
+    separator: keySeparator ?? "",
+    transform: keyTransforms?.[i] ?? "default",
+  }));
+}
+
+/**
+ * Build a reconciliation key from KeyMapping[] for one side of the data.
+ * Each mapping's columns are joined with its separator, then all mappings
+ * are joined with ASCII Unit Separator (\x1F) which never appears in data.
+ */
+export function buildKeyFromMappings(
+  row: string[],
+  mappings: import("./types").KeyMapping[],
+  side: "A" | "B"
+): string {
+  return mappings
+    .map((m) => {
+      const cols = side === "A" ? m.colsA : m.colsB;
+      if (cols.length === 0) {
+        throw new Error("KeyMapping has no columns for side " + side);
+      }
+      return cols
+        .map((colIdx) => applyTransform(row[colIdx] ?? "", m.transform))
+        .join(m.separator);
+    })
+    .join("\x1F");
+}
+
+/**
+ * Deduplicate rows by key. Keeps the first occurrence.
  * Returns [deduplicatedRows, duplicateCount].
  */
 export function deduplicateRows(
   rows: string[][],
-  keyColumnIndices: number[],
-  transforms?: import("./types").KeyTransform[],
-  separator: string = "||"
+  mappings: import("./types").KeyMapping[],
+  side: "A" | "B"
 ): [string[][], number] {
   const seen = new Set<string>();
   const unique: string[][] = [];
   let duplicates = 0;
 
   for (const row of rows) {
-    const key = buildKeyWithTransforms(row, keyColumnIndices, transforms, separator);
+    const key = buildKeyFromMappings(row, mappings, side);
     if (seen.has(key)) {
       duplicates++;
     } else {
