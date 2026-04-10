@@ -1,8 +1,35 @@
+export interface ExcerptSegment {
+  text: string;
+  highlight?: boolean;
+}
+
+export interface FieldIssue {
+  header: string;
+  value: ExcerptSegment[];
+  isExtra?: boolean;
+}
+
+export interface IssueDiagnosis {
+  label: string;
+  explanation: string;
+  fix: string;
+}
+
+export interface RowIssue {
+  line: number;
+  diagnoses: IssueDiagnosis[];
+  columnCount?: number;
+  expectedColumns?: number;
+  excerpt: ExcerptSegment[];
+  fields: FieldIssue[];
+}
+
 export interface ParseWarning {
   message: string;
   errorCount: number;
   expectedRows: number;
   actualRows: number;
+  rowIssues?: RowIssue[];
 }
 
 export interface RawParsedFile {

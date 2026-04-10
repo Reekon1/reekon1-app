@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
-import type { RawParsedFile, ParseWarning } from "./types";
+import type { RawParsedFile, ParseWarning, RowIssue, ExcerptSegment, FieldIssue, IssueDiagnosis } from "./types";
 
 const ACCEPTED_EXTENSIONS = [".xlsx", ".xls", ".csv", ".txt"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -122,6 +122,8 @@ function parseCsv(fileName: string, buffer: ArrayBuffer): RawParsedFile {
   // Normalize line endings
   text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
+  const totalLines = text.split("\n").filter((l) => l.trim().length > 0).length;
+
   const result = Papa.parse<string[]>(text, {
     header: false,
     skipEmptyLines: true,
@@ -133,8 +135,120 @@ function parseCsv(fileName: string, buffer: ArrayBuffer): RawParsedFile {
 
   // Recovery re-parse if high error rate
   if (result.errors.length > 0) {
-    const totalEstimated = data.length + result.errors.length;
-    const errorRate = result.errors.length / totalEstimated;
+    const sourceLines = text.split("\n");
+
+    const errorDiagnosis: Record<string, IssueDiagnosis> = {
+      InvalidQuotes: {
+        label: "Guillemet dans les données",
+        explanation:
+          'Un caractère " (guillemet double) apparaît dans un champ sans être échappé. Le logiciel de lecture interprète ce guillemet comme un délimiteur de texte CSV, ce qui décale ou fusionne les colonnes suivantes.',
+        fix: 'Dans le fichier source, supprimez les guillemets doubles ou remplacez-les par des apostrophes (\'), ou encadrez le champ entier entre guillemets avec les guillemets internes doublés (""). Exemple : "LE GECKO" → \'LE GECKO\' ou ""LE GECKO"".',
+      },
+      MissingQuotes: {
+        label: "Guillemet non fermé",
+        explanation:
+          'Un guillemet ouvrant " n\'a pas de guillemet fermant correspondant. Toutes les lignes suivantes sont absorbées dans le même champ jusqu\'à ce qu\'un autre guillemet soit trouvé, ce qui fusionne potentiellement des centaines de lignes.',
+        fix: "Supprimez le guillemet orphelin ou ajoutez le guillemet fermant manquant dans le fichier source.",
+      },
+      UndetectableDelimiter: {
+        label: "Séparateur non détecté",
+        explanation:
+          "Impossible de déterminer automatiquement le séparateur de colonnes (point-virgule, virgule, tabulation…).",
+        fix: "Vérifiez que le fichier est bien un CSV valide avec un séparateur cohérent sur toutes les lignes.",
+      },
+      TooFewFields: {
+        label: "Colonnes manquantes",
+        explanation:
+          "Cette ligne contient moins de colonnes que l'en-tête. Des données sont probablement manquantes ou un séparateur a été supprimé.",
+        fix: "Vérifiez la ligne dans le fichier source et ajoutez les séparateurs ou valeurs manquants.",
+      },
+      TooManyFields: {
+        label: "Colonnes en trop",
+        explanation:
+          "Cette ligne contient plus de colonnes que l'en-tête. Un champ contient probablement un séparateur (;) qui n'est pas échappé, ce qui crée des colonnes supplémentaires.",
+        fix: "Dans le fichier source, encadrez entre guillemets les champs contenant un séparateur, ou supprimez le séparateur parasite du champ.",
+      },
+    };
+
+    const highlightChars = (str: string, chars: Set<string>): ExcerptSegment[] => {
+      if (chars.size === 0) return [{ text: str }];
+      const segments: ExcerptSegment[] = [];
+      let buf = "";
+      for (const ch of str) {
+        if (chars.has(ch)) {
+          if (buf) segments.push({ text: buf });
+          segments.push({ text: ch, highlight: true });
+          buf = "";
+        } else {
+          buf += ch;
+        }
+      }
+      if (buf) segments.push({ text: buf });
+      return segments;
+    };
+
+    const QUOTE_CODES = new Set(["InvalidQuotes", "MissingQuotes"]);
+    const COL_CODES = new Set(["TooFewFields", "TooManyFields"]);
+
+    const buildRowIssues = (): RowIssue[] => {
+      const byRow = new Map<number, Papa.ParseError[]>();
+      for (const err of result.errors) {
+        if (err.row == null) continue;
+        const list = byRow.get(err.row) ?? [];
+        list.push(err);
+        byRow.set(err.row, list);
+      }
+
+      const expectedCols = data.length > 0 ? data[0].length : 0;
+      const delimiter = result.meta.delimiter;
+      const headers = (sourceLines[0] ?? "").trim().split(delimiter);
+      const issues: RowIssue[] = [];
+
+      for (const [row, errs] of byRow) {
+        const line = row + 1; // 0-based → 1-based
+        const codes = new Set(errs.map((e) => e.code));
+        const diagnoses: IssueDiagnosis[] = [...codes].map(
+          (code) => errorDiagnosis[code] ?? { label: code, explanation: "", fix: "" },
+        );
+        const sourceLine = sourceLines[row] ?? "";
+        const truncated = sourceLine.length > 120 ? sourceLine.slice(0, 120) + "…" : sourceLine;
+        const trimmed = truncated.trim();
+        const rawFields = sourceLine.trim().split(delimiter);
+        const actualCols = rawFields.length;
+
+        // Determine which characters to highlight based on error type
+        const badChars = new Set<string>();
+        const hasQuoteError = [...codes].some((c) => QUOTE_CODES.has(c));
+        const hasColError = [...codes].some((c) => COL_CODES.has(c));
+        if (hasQuoteError) badChars.add('"');
+
+        // Build structured fields
+        const fields: FieldIssue[] = rawFields.map((val, idx) => {
+          const isExtra = idx >= headers.length;
+          return {
+            header: isExtra
+              ? `Colonne supplémentaire #${idx - headers.length + 1}`
+              : headers[idx],
+            value: highlightChars(val, badChars),
+            isExtra: isExtra || undefined,
+          };
+        });
+
+        issues.push({
+          line,
+          diagnoses,
+          columnCount: actualCols !== expectedCols ? actualCols : undefined,
+          expectedColumns: actualCols !== expectedCols ? expectedCols : undefined,
+          excerpt: highlightChars(trimmed, badChars),
+          fields,
+        });
+      }
+
+      return issues.sort((a, b) => a.line - b.line);
+    };
+
+    const rowIssues = buildRowIssues();
+    const errorRate = result.errors.length / (data.length + result.errors.length);
 
     if (errorRate > 0.01) {
       // Re-parse without quote handling
@@ -151,12 +265,12 @@ function parseCsv(fileName: string, buffer: ArrayBuffer): RawParsedFile {
 
         data = recovery.data;
 
-        const pct = Math.round((data.length / totalEstimated) * 100);
         warnings.push({
-          message: `Votre fichier contient des guillemets non standard. ${data.length.toLocaleString("fr-FR")} lignes sur ${totalEstimated.toLocaleString("fr-FR")} ont été importées avec succès (${pct}%).`,
+          message: `Votre fichier contient des guillemets non standard. ${data.length.toLocaleString("fr-FR")} lignes sur ${totalLines.toLocaleString("fr-FR")} ont été importées avec succès.`,
           errorCount: result.errors.length,
-          expectedRows: totalEstimated,
+          expectedRows: totalLines,
           actualRows: data.length,
+          rowIssues,
         });
 
         if (recoveryCols !== originalCols && originalCols > 0) {
@@ -169,18 +283,20 @@ function parseCsv(fileName: string, buffer: ArrayBuffer): RawParsedFile {
         }
       } else {
         warnings.push({
-          message: `Attention : ${result.errors.length} erreurs de format détectées. ${data.length.toLocaleString("fr-FR")} lignes importées. Vérifiez le format de votre fichier.`,
+          message: `${result.errors.length} erreur(s) de format sur ${rowIssues.length} ligne(s). ${data.length.toLocaleString("fr-FR")} lignes importées sur ${totalLines.toLocaleString("fr-FR")}.`,
           errorCount: result.errors.length,
-          expectedRows: totalEstimated,
+          expectedRows: totalLines,
           actualRows: data.length,
+          rowIssues,
         });
       }
     } else {
       warnings.push({
-        message: `${result.errors.length} erreur(s) de format détectée(s). ${data.length.toLocaleString("fr-FR")} lignes importées.`,
+        message: `${result.errors.length} erreur(s) de format sur ${rowIssues.length} ligne(s). ${data.length.toLocaleString("fr-FR")} lignes importées.`,
         errorCount: result.errors.length,
-        expectedRows: data.length + result.errors.length,
+        expectedRows: totalLines,
         actualRows: data.length,
+        rowIssues,
       });
     }
   }
