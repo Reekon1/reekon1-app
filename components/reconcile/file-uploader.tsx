@@ -130,7 +130,7 @@ export function FileUploader({
             Glissez un fichier ici ou cliquez pour parcourir
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            xlsx, xls, csv, txt — 50 Mo max
+            xlsx, xls, csv, txt — 100 Mo max
           </p>
         </CardContent>
       </Card>

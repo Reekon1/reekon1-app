@@ -3,7 +3,7 @@ import Papa from "papaparse";
 import type { RawParsedFile, ParseWarning, RowIssue, ExcerptSegment, FieldIssue, IssueDiagnosis } from "./types";
 
 const ACCEPTED_EXTENSIONS = [".xlsx", ".xls", ".csv", ".txt"];
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 
 function getExtension(fileName: string): string {
   return fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
@@ -35,7 +35,7 @@ export function validateFile(file: File): string | null {
     return "Format non supporté. Formats acceptés : xlsx, xls, csv, txt";
   }
   if (file.size > MAX_FILE_SIZE) {
-    return "Fichier trop volumineux. Taille maximale : 50 Mo";
+    return "Fichier trop volumineux. Taille maximale : 100 Mo";
   }
   return null;
 }
@@ -118,6 +118,11 @@ function parseCsv(fileName: string, buffer: ArrayBuffer): RawParsedFile {
   const encoding = detectEncoding(buffer);
   const decoder = new TextDecoder(encoding);
   let text = decoder.decode(buffer);
+
+  // Strip BOM (UTF-8 BOM decoded as U+FEFF)
+  if (text.charCodeAt(0) === 0xfeff) {
+    text = text.slice(1);
+  }
 
   // Normalize line endings
   text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
