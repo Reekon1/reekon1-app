@@ -606,7 +606,7 @@ export function ConfigurationStep({
                   {/* Columns A - chips */}
                   <div
                     className={cn(
-                      "flex-1 flex items-center gap-1 flex-wrap min-h-[28px] px-2 py-1 rounded border text-sm transition-all",
+                      "flex-1 min-w-0 flex items-center gap-1 flex-wrap min-h-[28px] px-2 py-1 rounded border text-sm transition-all",
                       isActiveA
                         ? `${color.bg} ${color.text} ${color.activeBorder} ring-2 ${color.ring}`
                         : group.colsA.length > 0
@@ -662,7 +662,7 @@ export function ConfigurationStep({
                   {/* Columns B - chips */}
                   <div
                     className={cn(
-                      "flex-1 flex items-center gap-1 flex-wrap min-h-[28px] px-2 py-1 rounded border text-sm transition-all",
+                      "flex-1 min-w-0 flex items-center gap-1 flex-wrap min-h-[28px] px-2 py-1 rounded border text-sm transition-all",
                       isActiveB
                         ? `${color.bg} ${color.text} ${color.activeBorder} ring-2 ${color.ring}`
                         : group.colsB.length > 0
