@@ -32,7 +32,7 @@ async function EditTemplateContent({
         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
           <span>
             {(template.config.keyMappings?.length ?? template.config.keyColumnsA.length)} colonne
-            {(template.config.keyMappings?.length ?? template.config.keyColumnsA.length) > 1 ? "s" : ""} cl\u00e9
+            {(template.config.keyMappings?.length ?? template.config.keyColumnsA.length) > 1 ? "s" : ""} clé
             {(template.config.keyMappings?.length ?? template.config.keyColumnsA.length) > 1 ? "s" : ""}
           </span>
           {template.config.amountColumnA && <span>Montant</span>}

@@ -110,9 +110,9 @@ function TransformSelect({
       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
       <option value="default">Normalisation standard</option>
-      <option value="alphanumeric_only">Alphanum\u00e9rique uniquement (ex: N\u00b03456 \u2192 n3456)</option>
-      <option value="extract_code_prefix">Extraire le code (ex: CNFFOKTOS \u2013 OKTOS \u2192 cnffoktos)</option>
-      <option value="absolute_amount">Valeur absolue (ex: -1 234,56 \u2192 1234.56)</option>
+      <option value="alphanumeric_only">Alphanumérique uniquement (ex: N°3456 → n3456)</option>
+      <option value="extract_code_prefix">Extraire le code (ex: CNFFOKTOS – OKTOS → cnffoktos)</option>
+      <option value="absolute_amount">Valeur absolue (ex: -1 234,56 → 1234.56)</option>
     </select>
   );
 }
@@ -151,7 +151,7 @@ function SpreadsheetPreview({
       if (cols.includes(colIdx)) {
         return {
           color: PAIR_COLORS[gi % PAIR_COLORS.length],
-          label: `Cl\u00e9 ${gi + 1}`,
+          label: `Clé ${gi + 1}`,
         };
       }
     }
@@ -232,7 +232,7 @@ function SpreadsheetPreview({
                     colSpan={file.headers.length}
                     className="px-2.5 py-1 text-center text-muted-foreground text-[10px] italic"
                   >
-                    \u2026 {file.rows.length - MAX_PREVIEW_ROWS} lignes suppl\u00e9mentaires
+                    … {file.rows.length - MAX_PREVIEW_ROWS} lignes supplémentaires
                   </td>
                 </tr>
               )}
@@ -273,19 +273,19 @@ function KeyPreview({
 
   return (
     <div className={cn("text-xs px-3 py-1.5 rounded", color.bg, color.text)}>
-      <span className="opacity-70">Aper\u00e7u : </span>
+      <span className="opacity-70">Aperçu : </span>
       {previewA !== null && (
         <span className="font-mono font-medium">&ldquo;{previewA}&rdquo;</span>
       )}
       {previewA !== null && previewB !== null && (
-        <span className="mx-1.5">\u2194</span>
+        <span className="mx-1.5">↔</span>
       )}
       {previewB !== null && (
         <span className="font-mono font-medium">&ldquo;{previewB}&rdquo;</span>
       )}
-      {match && <span className="ml-1.5 text-green-700">\u2713</span>}
+      {match && <span className="ml-1.5 text-green-700">✓</span>}
       {previewA !== null && previewB !== null && !match && (
-        <span className="ml-1.5 text-red-600">\u2717</span>
+        <span className="ml-1.5 text-red-600">✗</span>
       )}
     </div>
   );
@@ -428,13 +428,13 @@ export function ConfigurationStep({
     const validGroups = keyGroups.filter(isKeyValidated);
 
     if (validGroups.length === 0) {
-      setError("Ajoutez au moins une cl\u00e9 de rapprochement");
+      setError("Ajoutez au moins une clé de rapprochement");
       return;
     }
 
     const incompleteGroups = keyGroups.filter((g) => !isKeyValidated(g));
     if (incompleteGroups.length > 0) {
-      setError("Certaines cl\u00e9s ne sont pas compl\u00e8tes. Terminez-les ou supprimez-les.");
+      setError("Certaines clés ne sont pas complètes. Terminez-les ou supprimez-les.");
       return;
     }
 
@@ -442,7 +442,7 @@ export function ConfigurationStep({
     for (let i = 0; i < validGroups.length; i++) {
       const g = validGroups[i];
       if ((g.colsA.length > 1 || g.colsB.length > 1) && g.separator.length === 0) {
-        setError(`La cl\u00e9 ${i + 1} a plusieurs colonnes mais pas de s\u00e9parateur. Ajoutez un s\u00e9parateur pour \u00e9viter les collisions.`);
+        setError(`La clé ${i + 1} a plusieurs colonnes mais pas de séparateur. Ajoutez un séparateur pour éviter les collisions.`);
         return;
       }
     }
@@ -452,7 +452,7 @@ export function ConfigurationStep({
       (amountColA === null && amountColB !== null)
     ) {
       setError(
-        "Veuillez s\u00e9lectionner la colonne de montant pour les deux fichiers, ou aucun des deux"
+        "Veuillez sélectionner la colonne de montant pour les deux fichiers, ou aucun des deux"
       );
       return;
     }
@@ -498,7 +498,7 @@ export function ConfigurationStep({
           <span>
             Cliquez sur une colonne dans{" "}
             <span className="font-bold">{fileName}</span>{" "}
-            pour la Cl\u00e9 {activeSelection.groupIndex + 1}
+            pour la Clé {activeSelection.groupIndex + 1}
             {activeSelection.side === "A" && keyGroups[activeSelection.groupIndex]?.colsA.length > 0 && (
               <span className="ml-1 opacity-60">(ou cliquez &ldquo;Suivant&rdquo; pour passer au fichier B)</span>
             )}
@@ -540,7 +540,7 @@ export function ConfigurationStep({
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">
-        D\u00e9finissez les cl\u00e9s de rapprochement entre vos deux fichiers
+        Définissez les clés de rapprochement entre vos deux fichiers
       </p>
 
       {selectionInstruction}
@@ -548,15 +548,15 @@ export function ConfigurationStep({
       {/* Key list */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Cl\u00e9s de rapprochement</CardTitle>
+          <CardTitle className="text-lg">Clés de rapprochement</CardTitle>
           <CardDescription>
-            Ajoutez une cl\u00e9, puis s\u00e9lectionnez la colonne correspondante dans chaque fichier
+            Ajoutez une clé, puis sélectionnez la colonne correspondante dans chaque fichier
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {keyGroups.length === 0 && !activeSelection && (
             <p className="text-sm text-muted-foreground italic py-2">
-              Aucune cl\u00e9 d\u00e9finie. Ajoutez une cl\u00e9 pour commencer.
+              Aucune clé définie. Ajoutez une clé pour commencer.
             </p>
           )}
           {keyGroups.map((group, index) => {
@@ -599,7 +599,7 @@ export function ConfigurationStep({
                         color.badge
                       )}
                     >
-                      Cl\u00e9 {index + 1}
+                      Clé {index + 1}
                     </span>
                   </div>
 
@@ -633,7 +633,7 @@ export function ConfigurationStep({
                                 }}
                                 className="ml-1 opacity-60 hover:opacity-100"
                               >
-                                \u00d7
+                                ×
                               </button>
                             )}
                           </span>
@@ -641,7 +641,7 @@ export function ConfigurationStep({
                       ))
                     ) : (
                       <span className="text-xs opacity-60">
-                        {isActiveA ? "\u2190 cliquez dans le tableau" : `Choisir dans ${baseName(fileA.fileName)}`}
+                        {isActiveA ? "← cliquez dans le tableau" : `Choisir dans ${baseName(fileA.fileName)}`}
                       </span>
                     )}
                     {isActiveA && group.colsA.length > 0 && (
@@ -652,7 +652,7 @@ export function ConfigurationStep({
                         }}
                         className={cn("text-xs ml-auto px-1.5 py-0.5 rounded", color.badge, "opacity-80 hover:opacity-100")}
                       >
-                        Suivant \u2192
+                        Suivant →
                       </button>
                     )}
                   </div>
@@ -689,7 +689,7 @@ export function ConfigurationStep({
                                 }}
                                 className="ml-1 opacity-60 hover:opacity-100"
                               >
-                                \u00d7
+                                ×
                               </button>
                             )}
                           </span>
@@ -697,7 +697,7 @@ export function ConfigurationStep({
                       ))
                     ) : (
                       <span className="text-xs opacity-60">
-                        {isActiveB ? "\u2190 cliquez dans le tableau" : `Choisir dans ${baseName(fileB.fileName)}`}
+                        {isActiveB ? "← cliquez dans le tableau" : `Choisir dans ${baseName(fileB.fileName)}`}
                       </span>
                     )}
                     {isActiveB && group.colsB.length > 0 && (
@@ -708,7 +708,7 @@ export function ConfigurationStep({
                         }}
                         className={cn("text-xs ml-auto px-1.5 py-0.5 rounded", color.badge, "opacity-80 hover:opacity-100")}
                       >
-                        Terminer \u2713
+                        Terminer ✓
                       </button>
                     )}
                   </div>
@@ -730,7 +730,7 @@ export function ConfigurationStep({
                       htmlFor={`separator-${index}`}
                       className="text-xs text-muted-foreground whitespace-nowrap"
                     >
-                      S\u00e9parateur :
+                      Séparateur :
                     </Label>
                     <input
                       id={`separator-${index}`}
@@ -786,7 +786,7 @@ export function ConfigurationStep({
             );
           })}
           <Button variant="outline" size="sm" onClick={addKeyGroup} className="w-fit">
-            + Ajouter une cl\u00e9
+            + Ajouter une clé
           </Button>
         </CardContent>
       </Card>
@@ -824,7 +824,7 @@ export function ConfigurationStep({
         <CardHeader>
           <CardTitle className="text-lg">Colonne de montant</CardTitle>
           <CardDescription>
-            Optionnel \u2014 permet de d\u00e9tecter les \u00e9carts de montants entre lignes correspondantes
+            Optionnel — permet de détecter les écarts de montants entre lignes correspondantes
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -890,13 +890,13 @@ export function ConfigurationStep({
               onCheckedChange={onDeduplicationChange}
             />
             <Label htmlFor="dedup">
-              D\u00e9dupliquer les lignes ayant la m\u00eame cl\u00e9
+              Dédupliquer les lignes ayant la même clé
             </Label>
           </div>
           {deduplication && (
             <p className="text-xs text-muted-foreground mt-2">
-              Les lignes en double bas\u00e9es sur la cl\u00e9 d\u00e9finie seront regroup\u00e9es.
-              Seule la premi\u00e8re occurrence sera utilis\u00e9e.
+              Les lignes en double basées sur la clé définie seront regroupées.
+              Seule la première occurrence sera utilisée.
             </p>
           )}
         </CardContent>
@@ -905,7 +905,7 @@ export function ConfigurationStep({
       {warnings && warnings.length > 0 && (
         <div className="p-3 bg-orange-50 border border-orange-200 rounded-md">
           <p className="text-sm font-medium text-orange-700 mb-1">
-            Colonnes du mod\u00e8le non trouv\u00e9es :
+            Colonnes du modèle non trouvées :
           </p>
           <ul className="text-sm text-orange-600 list-disc list-inside">
             {warnings.map((w, i) => (
