@@ -86,69 +86,108 @@ function Excerpt({ segments }: { segments: ExcerptSegment[] }) {
   );
 }
 
-function RowIssueRow({
-  issue,
-  onSelect,
-}: {
-  issue: RowIssue;
-  onSelect: (issue: RowIssue) => void;
-}) {
-  const plainText = issue.excerpt.map((s) => s.text).join("");
-  return (
-    <tr
-      className="border-t border-amber-200 cursor-pointer hover:bg-amber-100/60 transition-colors"
-      onClick={() => onSelect(issue)}
-    >
-      <td className="py-1 pr-2 font-mono whitespace-nowrap align-top">
-        {issue.line.toLocaleString("fr-FR")}
-      </td>
-      <td className="py-1 pr-2 align-top">
-        {issue.diagnoses.map((d) => d.label).join(", ")}
-      </td>
-      <td className="py-1 pr-2 font-mono whitespace-nowrap align-top">
-        {issue.columnCount != null && issue.expectedColumns != null
-          ? `${issue.columnCount} / ${issue.expectedColumns}`
-          : "—"}
-      </td>
-      <td className="py-1 align-top max-w-[300px] truncate" title={plainText}>
-        <code className="text-[11px]">
-          <Excerpt segments={issue.excerpt} />
-        </code>
-      </td>
-    </tr>
-  );
-}
-
 function hasHighlight(segments: ExcerptSegment[]): boolean {
   return segments.some((s) => s.highlight);
 }
 
-function RowIssueModal({
-  issue,
+function IssuesModal({
+  issues,
   onClose,
 }: {
-  issue: RowIssue | null;
+  issues: RowIssue[] | null;
   onClose: () => void;
 }) {
+  const [selected, setSelected] = useState<RowIssue | null>(null);
+
+  const handleClose = () => {
+    setSelected(null);
+    onClose();
+  };
+
   return (
-    <Dialog open={issue !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[calc(100vw-2rem)] w-fit max-h-[90vh] flex flex-col">
-        {issue && (
+    <Dialog open={issues !== null} onOpenChange={(open) => !open && handleClose()}>
+      <DialogContent className="!max-w-[calc(100vw-4rem)] w-full max-h-[90vh] flex flex-col">
+        {issues && !selected && (
           <>
             <DialogHeader>
               <DialogTitle>
-                Ligne {issue.line.toLocaleString("fr-FR")}
+                {issues.length} ligne(s) avec erreur(s) de format
               </DialogTitle>
               <DialogDescription>
-                {issue.diagnoses.map((d) => d.label).join(", ")}
-                {issue.columnCount != null &&
-                  issue.expectedColumns != null &&
-                  ` — ${issue.columnCount} colonnes au lieu de ${issue.expectedColumns}`}
+                Cliquez sur une ligne pour voir le détail du problème
+              </DialogDescription>
+            </DialogHeader>
+            <div className="overflow-auto min-h-0">
+              <table className="text-xs w-full">
+                <thead>
+                  <tr className="text-left bg-muted/50">
+                    <th className="py-1.5 px-2 font-semibold">Ligne</th>
+                    <th className="py-1.5 px-2 font-semibold">Problème</th>
+                    <th className="py-1.5 px-2 font-semibold">Colonnes</th>
+                    <th className="py-1.5 px-2 font-semibold">Extrait</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {issues.slice(0, 100).map((issue) => {
+                    const plainText = issue.excerpt.map((s) => s.text).join("");
+                    return (
+                      <tr
+                        key={issue.line}
+                        className="border-t cursor-pointer hover:bg-muted/40 transition-colors"
+                        onClick={() => setSelected(issue)}
+                      >
+                        <td className="py-1.5 px-2 font-mono whitespace-nowrap">
+                          {issue.line.toLocaleString("fr-FR")}
+                        </td>
+                        <td className="py-1.5 px-2">
+                          {issue.diagnoses.map((d) => d.label).join(", ")}
+                        </td>
+                        <td className="py-1.5 px-2 font-mono whitespace-nowrap">
+                          {issue.columnCount != null && issue.expectedColumns != null
+                            ? `${issue.columnCount} / ${issue.expectedColumns}`
+                            : "—"}
+                        </td>
+                        <td className="py-1.5 px-2 max-w-[400px] truncate" title={plainText}>
+                          <code className="text-[11px]">
+                            <Excerpt segments={issue.excerpt} />
+                          </code>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {issues.length > 100 && (
+                <p className="text-xs text-muted-foreground p-2">
+                  … et {(issues.length - 100).toLocaleString("fr-FR")} autres lignes
+                </p>
+              )}
+            </div>
+          </>
+        )}
+
+        {selected && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelected(null)}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  ← Retour
+                </button>
+                <span>Ligne {selected.line.toLocaleString("fr-FR")}</span>
+              </DialogTitle>
+              <DialogDescription>
+                {selected.diagnoses.map((d) => d.label).join(", ")}
+                {selected.columnCount != null &&
+                  selected.expectedColumns != null &&
+                  ` — ${selected.columnCount} colonnes au lieu de ${selected.expectedColumns}`}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-2">
-              {issue.diagnoses.map((d, i) => (
+              {selected.diagnoses.map((d, i) => (
                 <div
                   key={i}
                   className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm space-y-1"
@@ -166,7 +205,7 @@ function RowIssueModal({
               <table className="text-xs">
                 <thead>
                   <tr>
-                    {issue.fields.map((field, idx) => {
+                    {selected.fields.map((field, idx) => {
                       const flagged = field.isExtra || hasHighlight(field.value);
                       return (
                         <th
@@ -190,7 +229,7 @@ function RowIssueModal({
                 </thead>
                 <tbody>
                   <tr>
-                    {issue.fields.map((field, idx) => {
+                    {selected.fields.map((field, idx) => {
                       const flagged = field.isExtra || hasHighlight(field.value);
                       return (
                         <td
@@ -217,7 +256,7 @@ function RowIssueModal({
 }
 
 function ParseWarnings({ raw }: { raw: RawParsedFile }) {
-  const [selectedIssue, setSelectedIssue] = useState<RowIssue | null>(null);
+  const [openIssues, setOpenIssues] = useState<RowIssue[] | null>(null);
 
   if (!raw.warnings || raw.warnings.length === 0) return null;
   return (
@@ -226,43 +265,18 @@ function ParseWarnings({ raw }: { raw: RawParsedFile }) {
         <div key={i}>
           <p className="text-sm text-amber-700">{w.message}</p>
           {w.rowIssues && w.rowIssues.length > 0 && (
-            <details className="mt-1">
-              <summary className="text-xs text-amber-600 cursor-pointer hover:underline">
-                Voir le détail des {w.rowIssues.length} ligne(s) affectée(s)
-              </summary>
-              <div className="mt-1 overflow-x-auto">
-                <table className="text-xs text-amber-700 w-full">
-                  <thead>
-                    <tr className="text-left">
-                      <th className="py-1 pr-2 font-semibold">Ligne</th>
-                      <th className="py-1 pr-2 font-semibold">Problème</th>
-                      <th className="py-1 pr-2 font-semibold">Colonnes</th>
-                      <th className="py-1 font-semibold">Extrait</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {w.rowIssues.slice(0, 50).map((issue) => (
-                      <RowIssueRow
-                        key={issue.line}
-                        issue={issue}
-                        onSelect={setSelectedIssue}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-                {w.rowIssues.length > 50 && (
-                  <p className="text-xs text-amber-600 mt-1">
-                    … et {(w.rowIssues.length - 50).toLocaleString("fr-FR")} autres lignes
-                  </p>
-                )}
-              </div>
-            </details>
+            <button
+              className="mt-1 text-xs text-amber-600 hover:underline cursor-pointer"
+              onClick={() => setOpenIssues(w.rowIssues!)}
+            >
+              Voir les {w.rowIssues.length} ligne(s) affectée(s)
+            </button>
           )}
         </div>
       ))}
-      <RowIssueModal
-        issue={selectedIssue}
-        onClose={() => setSelectedIssue(null)}
+      <IssuesModal
+        issues={openIssues}
+        onClose={() => setOpenIssues(null)}
       />
     </div>
   );
