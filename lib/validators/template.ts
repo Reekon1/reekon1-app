@@ -11,6 +11,8 @@ const templateKeyMappingSchema = z.object({
   colsA: z.array(z.string()).min(1),
   colsB: z.array(z.string()).min(1),
   separator: z.string(),
+  separatorsA: z.array(z.string()).optional(),
+  separatorsB: z.array(z.string()).optional(),
   transform: keyTransformSchema,
 });
 

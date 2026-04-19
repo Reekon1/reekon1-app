@@ -10,6 +10,8 @@ export interface TemplateKeyMapping {
   colsA: string[];
   colsB: string[];
   separator: string;
+  separatorsA?: string[];
+  separatorsB?: string[];
   transform: KeyTransform;
 }
 
@@ -57,6 +59,8 @@ export function toTemplateConfig(
     colsA: m.colsA.map((i) => headersA[i] ?? ""),
     colsB: m.colsB.map((i) => headersB[i] ?? ""),
     separator: m.separator,
+    separatorsA: m.separatorsA ? [...m.separatorsA] : undefined,
+    separatorsB: m.separatorsB ? [...m.separatorsB] : undefined,
     transform: m.transform,
   }));
 
@@ -118,6 +122,8 @@ export function fromTemplateConfig(
       colsA: tm.colsA.map((n) => resolveIndex(n, headersA, "Systeme A")),
       colsB: tm.colsB.map((n) => resolveIndex(n, headersB, "Systeme B")),
       separator: tm.separator,
+      separatorsA: tm.separatorsA ? [...tm.separatorsA] : undefined,
+      separatorsB: tm.separatorsB ? [...tm.separatorsB] : undefined,
       transform: tm.transform,
     }));
   } else {

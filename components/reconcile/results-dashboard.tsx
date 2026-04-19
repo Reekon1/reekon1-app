@@ -18,10 +18,11 @@ interface ResultsDashboardProps {
   fileB: ParsedFile;
   config: ReconciliationConfig;
   onNewReconciliation: () => void;
+  onBackToConfiguration: () => void;
   onManualReconciliation?: () => void;
   manualMatches?: ManualMatch[];
-  manualStep?: "none" | "computing" | "selecting" | "done";
-  computeProgress?: { current: number; total: number };
+  remainingUniqueA?: number;
+  remainingUniqueB?: number;
 }
 
 function baseName(fileName: string) {
@@ -127,16 +128,18 @@ export function ResultsDashboard({
   fileB,
   config,
   onNewReconciliation,
+  onBackToConfiguration,
   onManualReconciliation,
   manualMatches,
-  manualStep = "none",
-  computeProgress,
+  remainingUniqueA,
+  remainingUniqueB,
 }: ResultsDashboardProps) {
   const s = result.summary;
   const [isGenerating, setIsGenerating] = useState(false);
   const manualCount = manualMatches?.length ?? 0;
-  const hasUnmatched = s.uniqueA > 0 && s.uniqueB > 0;
-  const isDone = manualStep === "done" || !hasUnmatched;
+  const remainA = remainingUniqueA ?? s.uniqueA - manualCount;
+  const remainB = remainingUniqueB ?? s.uniqueB - manualCount;
+  const hasUnmatched = remainA > 0 && remainB > 0;
 
   const handleDownload = useCallback(async () => {
     setIsGenerating(true);
@@ -159,18 +162,35 @@ export function ResultsDashboard({
   const totalVariance = result.amountVariances.reduce((sum, v) => sum + v.variance, 0);
   const varianceFooter = ["Total", "", "", formatAmount(totalVariance)];
 
-  // Unique A table
-  const uniqueAHeaders = ["Clé", ...fileA.headers];
-  const uniqueARows = result.uniqueA.map((u) => [u.key, ...u.row]);
+  // Manually matched indices (exclude from "unique" display)
+  const matchedIndexA = new Set(manualMatches?.map((m) => m.indexA) ?? []);
+  const matchedIndexB = new Set(manualMatches?.map((m) => m.indexB) ?? []);
 
-  // Unique B table
+  // Unique A table (still unmatched after manual passes)
+  const uniqueAHeaders = ["Clé", ...fileA.headers];
+  const uniqueARows = result.uniqueA
+    .map((u, i) => ({ u, i }))
+    .filter(({ i }) => !matchedIndexA.has(i))
+    .map(({ u }) => [u.key, ...u.row]);
+
+  // Unique B table (still unmatched after manual passes)
   const uniqueBHeaders = ["Clé", ...fileB.headers];
-  const uniqueBRows = result.uniqueB.map((u) => [u.key, ...u.row]);
+  const uniqueBRows = result.uniqueB
+    .map((u, i) => ({ u, i }))
+    .filter(({ i }) => !matchedIndexB.has(i))
+    .map(({ u }) => [u.key, ...u.row]);
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
+          <Button
+            variant="ghost"
+            onClick={onBackToConfiguration}
+            className="mb-2 h-auto px-0 text-muted-foreground hover:text-foreground"
+          >
+            ← Retour au paramétrage
+          </Button>
           <h1 className="font-bold text-2xl">Résultats du rapprochement</h1>
           <div className="mt-2">
             <MatchRateIndicator rate={s.matchRate} />
@@ -206,7 +226,7 @@ export function ResultsDashboard({
         <Card className="border-red-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-3xl text-red-500 text-center">
-              {s.uniqueA}
+              {remainA}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center">
@@ -216,7 +236,7 @@ export function ResultsDashboard({
         <Card className="border-red-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-3xl text-red-500 text-center">
-              {s.uniqueB}
+              {remainB}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center">
@@ -243,37 +263,25 @@ export function ResultsDashboard({
           ` · ${s.duplicatesA + s.duplicatesB} doublons supprimés`}
       </p>
 
-      {/* Manual reconciliation status */}
-      {manualStep === "computing" && computeProgress && (
-        <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
-          <p className="text-sm text-blue-700">
-            Calcul des suggestions... {computeProgress.current}/{computeProgress.total} lignes analysées
-          </p>
-          <div className="mt-2 h-2 bg-blue-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-500 rounded-full transition-all"
-              style={{ width: `${(computeProgress.current / Math.max(computeProgress.total, 1)) * 100}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {manualStep === "done" && manualCount > 0 && (
+      {manualCount > 0 && (
         <div className="p-4 bg-green-50 border border-green-200 rounded-md">
           <p className="text-sm text-green-700 font-medium">
-            {manualCount} paire{manualCount !== 1 ? "s" : ""} rapprochée{manualCount !== 1 ? "s" : ""} manuellement
+            {manualCount} paire{manualCount !== 1 ? "s" : ""} rapprochée
+            {manualCount !== 1 ? "s" : ""} manuellement au total
           </p>
         </div>
       )}
 
       {/* Manual reconciliation button */}
-      {hasUnmatched && manualStep === "none" && (
+      {hasUnmatched && (
         <Button
           variant="outline"
           onClick={onManualReconciliation}
           className="self-start"
         >
-          Rapprochement manuel ({s.uniqueA + s.uniqueB} lignes non rapprochées)
+          {manualCount > 0
+            ? `Nouvelle passe manuelle (${remainA + remainB} lignes restantes)`
+            : `Rapprochement manuel (${remainA + remainB} lignes non rapprochées)`}
         </Button>
       )}
 
@@ -288,19 +296,22 @@ export function ResultsDashboard({
 
       <DetailTable
         title={`Lignes uniques ${baseName(fileA.fileName)}`}
-        count={s.uniqueA}
+        count={remainA}
         headers={uniqueAHeaders}
         rows={uniqueARows}
       />
 
       <DetailTable
         title={`Lignes uniques ${baseName(fileB.fileName)}`}
-        count={s.uniqueB}
+        count={remainB}
         headers={uniqueBHeaders}
         rows={uniqueBRows}
       />
 
       <div className="flex justify-start gap-3 pt-4">
+        <Button variant="outline" onClick={onBackToConfiguration}>
+          Modifier le paramétrage
+        </Button>
         <Button variant="outline" onClick={onNewReconciliation}>
           Nouveau rapprochement
         </Button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { Fragment, useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -8,10 +8,16 @@ import { Switch } from "@/components/ui/switch";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { ParsedFile, KeyTransform, KeyMapping } from "@/lib/reconciliation/types";
 import { applyTransform } from "@/lib/reconciliation/normalizer";
 
@@ -41,13 +47,17 @@ interface KeyGroup {
   colsA: number[];
   colsB: number[];
   separator: string;
+  separatorsA: string[];
+  separatorsB: string[];
   transform: KeyTransform;
 }
 
-type ActiveSelection =
-  | { type: "key"; groupIndex: number; side: "A" | "B" }
-  | { type: "amount"; side: "A" | "B" }
-  | null;
+interface KeyDialogState {
+  mode: "create" | "edit";
+  index: number | null;
+  draft: KeyGroup;
+  error: string | null;
+}
 
 const PAIR_COLORS = [
   {
@@ -84,14 +94,7 @@ const PAIR_COLORS = [
   },
 ] as const;
 
-const AMOUNT_COLOR = {
-  bg: "bg-green-100",
-  text: "text-green-800",
-  cellBg: "bg-green-50",
-  badge: "bg-green-600 text-white",
-  ring: "ring-green-500",
-  activeBorder: "border-green-500",
-};
+const MAX_PREVIEW_ROWS = 5;
 
 function TransformSelect({
   value,
@@ -110,9 +113,9 @@ function TransformSelect({
       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
       <option value="default">Normalisation standard</option>
-      <option value="alphanumeric_only">Alphanumérique uniquement (ex: N°3456 → n3456)</option>
-      <option value="extract_code_prefix">Extraire le code (ex: CNFFOKTOS – OKTOS → cnffoktos)</option>
-      <option value="absolute_amount">Valeur absolue (ex: -1 234,56 → 1234.56)</option>
+      <option value="alphanumeric_only">Alphanumerique uniquement</option>
+      <option value="extract_code_prefix">Extraire le code</option>
+      <option value="absolute_amount">Valeur absolue</option>
     </select>
   );
 }
@@ -121,123 +124,210 @@ function baseName(fileName: string) {
   return fileName.replace(/\.[^/.]+$/, "");
 }
 
-const MAX_PREVIEW_ROWS = 5;
+function createEmptyKeyGroup(): KeyGroup {
+  return {
+    colsA: [],
+    colsB: [],
+    separator: "",
+    separatorsA: [],
+    separatorsB: [],
+    transform: "default",
+  };
+}
 
-type ColColor = (typeof PAIR_COLORS)[number] | typeof AMOUNT_COLOR;
+function cloneKeyGroup(group: KeyGroup): KeyGroup {
+  return {
+    colsA: [...group.colsA],
+    colsB: [...group.colsB],
+    separator: group.separator,
+    separatorsA: [...group.separatorsA],
+    separatorsB: [...group.separatorsB],
+    transform: group.transform,
+  };
+}
+
+function validateKeyGroup(group: KeyGroup): string | null {
+  if (group.colsA.length === 0 || group.colsB.length === 0) {
+    return "Selectionnez une colonne dans chaque fichier.";
+  }
+
+  return null;
+}
+
+function fillSeparators(columns: number[], existing: string[], fallback: string): string[] {
+  const needed = Math.max(0, columns.length - 1);
+  if (existing.length === needed) return existing;
+  const next: string[] = [];
+  for (let i = 0; i < needed; i++) {
+    next.push(existing[i] ?? fallback);
+  }
+  return next;
+}
+
+function KeyChips({
+  file,
+  columns,
+  color,
+  emptyLabel,
+  onRemove,
+}: {
+  file: ParsedFile;
+  columns: number[];
+  color: (typeof PAIR_COLORS)[number];
+  emptyLabel: string;
+  onRemove?: (colIdx: number) => void;
+}) {
+  if (columns.length === 0) {
+    return <span className="text-xs text-muted-foreground">{emptyLabel}</span>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {columns.map((colIdx) => (
+        <span
+          key={colIdx}
+          className={cn("inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs", color.badge)}
+        >
+          {file.headers[colIdx] || `Col ${colIdx + 1}`}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={() => onRemove(colIdx)}
+              className="opacity-70 hover:opacity-100 leading-none"
+              aria-label="Retirer"
+            >
+              ×
+            </button>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function EditableKeyChips({
+  file,
+  columns,
+  separators,
+  color,
+  emptyLabel,
+  onRemove,
+  onSeparatorChange,
+}: {
+  file: ParsedFile;
+  columns: number[];
+  separators: string[];
+  color: (typeof PAIR_COLORS)[number];
+  emptyLabel: string;
+  onRemove: (position: number) => void;
+  onSeparatorChange: (position: number, value: string) => void;
+}) {
+  if (columns.length === 0) {
+    return <span className="text-xs text-muted-foreground">{emptyLabel}</span>;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {columns.map((colIdx, position) => (
+        <Fragment key={position}>
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs",
+              color.badge
+            )}
+          >
+            {file.headers[colIdx] || `Col ${colIdx + 1}`}
+            <button
+              type="button"
+              onClick={() => onRemove(position)}
+              className="opacity-70 hover:opacity-100 leading-none"
+              aria-label="Retirer"
+            >
+              ×
+            </button>
+          </span>
+          {position < columns.length - 1 && (
+            <input
+              type="text"
+              value={separators[position] ?? ""}
+              onChange={(e) => onSeparatorChange(position, e.target.value)}
+              placeholder="sep"
+              aria-label={`Separateur apres la colonne ${position + 1}`}
+              className="h-6 w-12 rounded border border-input bg-transparent px-1 text-center text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          )}
+        </Fragment>
+      ))}
+    </div>
+  );
+}
 
 function SpreadsheetPreview({
   file,
   side,
-  keyGroups,
-  amountCol,
-  activeSelection,
+  group,
+  color,
   onColumnClick,
-  collapsed,
 }: {
   file: ParsedFile;
   side: "A" | "B";
-  keyGroups: KeyGroup[];
-  amountCol: number | null;
-  activeSelection: ActiveSelection;
+  group: KeyGroup;
+  color: (typeof PAIR_COLORS)[number];
   onColumnClick: (colIdx: number) => void;
-  collapsed: boolean;
 }) {
-  const isTargetSide = activeSelection?.side === side;
   const previewRows = file.rows.slice(0, MAX_PREVIEW_ROWS);
-
-  const getColInfo = (colIdx: number): { color: ColColor; label: string } | null => {
-    for (let gi = 0; gi < keyGroups.length; gi++) {
-      const cols = side === "A" ? keyGroups[gi].colsA : keyGroups[gi].colsB;
-      if (cols.includes(colIdx)) {
-        return {
-          color: PAIR_COLORS[gi % PAIR_COLORS.length],
-          label: `Clé ${gi + 1}`,
-        };
-      }
-    }
-    if (amountCol === colIdx) {
-      return { color: AMOUNT_COLOR, label: "Montant" };
-    }
-    return null;
-  };
+  const selectedCols = side === "A" ? group.colsA : group.colsB;
 
   return (
-    <div
-      className={cn(
-        "rounded-md border overflow-hidden transition-all duration-200",
-        isTargetSide && "ring-2 ring-primary shadow-md"
-      )}
-    >
-      <div className={cn("overflow-x-auto", collapsed ? "max-h-12" : "max-h-56")} style={{ transition: "max-height 200ms ease" }}>
+    <div className="rounded-md border overflow-hidden">
+      <div className="overflow-x-auto max-h-56">
         <table className="text-xs border-collapse w-full min-w-max">
           <thead className="sticky top-0 z-10">
             <tr className="bg-background border-b">
               {file.headers.map((header, colIdx) => {
-                const info = getColInfo(colIdx);
+                const isSelected = selectedCols.includes(colIdx);
                 return (
                   <th
                     key={colIdx}
-                    onClick={isTargetSide ? () => onColumnClick(colIdx) : undefined}
+                    onClick={() => onColumnClick(colIdx)}
                     className={cn(
-                      "px-2.5 py-2 text-left font-medium whitespace-nowrap border-r last:border-r-0 select-none transition-colors",
-                      isTargetSide
-                        ? "cursor-pointer hover:bg-primary/10"
-                        : "cursor-default",
-                      info
-                        ? `${info.color.bg} ${info.color.text}`
-                        : "text-muted-foreground bg-muted/20"
+                      "px-2.5 py-2 text-left font-medium whitespace-nowrap border-r last:border-r-0 select-none transition-colors cursor-pointer hover:bg-primary/10",
+                      isSelected ? `${color.bg} ${color.text}` : "text-muted-foreground bg-muted/20"
                     )}
                   >
-                    <div className="flex flex-col gap-0.5 min-w-[60px]">
-                      {info && (
-                        <span
-                          className={cn(
-                            "text-[9px] px-1 rounded font-semibold inline-block w-fit leading-4",
-                            info.color.badge
-                          )}
-                        >
-                          {info.label}
-                        </span>
-                      )}
-                      <span>{header || `Col ${colIdx + 1}`}</span>
-                    </div>
+                    {header || `Col ${colIdx + 1}`}
                   </th>
                 );
               })}
             </tr>
           </thead>
-          {!collapsed && (
-            <tbody>
-              {previewRows.map((row, rowIdx) => (
-                <tr key={rowIdx} className="border-b last:border-b-0 hover:bg-muted/10">
-                  {file.headers.map((_, colIdx) => {
-                    const info = getColInfo(colIdx);
-                    return (
-                      <td
-                        key={colIdx}
-                        className={cn(
-                          "px-2.5 py-1 border-r last:border-r-0 max-w-[120px] truncate",
-                          info ? info.color.cellBg : ""
-                        )}
-                      >
-                        {row[colIdx] ?? ""}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-              {file.rows.length > MAX_PREVIEW_ROWS && (
-                <tr>
+          <tbody>
+            {previewRows.map((row, rowIdx) => (
+              <tr key={rowIdx} className="border-b last:border-b-0 hover:bg-muted/10">
+                {file.headers.map((_, colIdx) => (
                   <td
-                    colSpan={file.headers.length}
-                    className="px-2.5 py-1 text-center text-muted-foreground text-[10px] italic"
+                    key={colIdx}
+                    className={cn(
+                      "px-2.5 py-1 border-r last:border-r-0 max-w-[120px] truncate",
+                      selectedCols.includes(colIdx) ? color.cellBg : ""
+                    )}
                   >
-                    … {file.rows.length - MAX_PREVIEW_ROWS} lignes supplémentaires
+                    {row[colIdx] ?? ""}
                   </td>
-                </tr>
-              )}
-            </tbody>
-          )}
+                ))}
+              </tr>
+            ))}
+            {file.rows.length > MAX_PREVIEW_ROWS && (
+              <tr>
+                <td
+                  colSpan={file.headers.length}
+                  className="px-2.5 py-1 text-center text-muted-foreground text-[10px] italic"
+                >
+                  ... {file.rows.length - MAX_PREVIEW_ROWS} lignes supplementaires
+                </td>
+              </tr>
+            )}
+          </tbody>
         </table>
       </div>
     </div>
@@ -256,33 +346,33 @@ function KeyPreview({
   color: (typeof PAIR_COLORS)[number];
 }) {
   if (group.colsA.length === 0 && group.colsB.length === 0) return null;
+
   const row0A = fileA.rows[0];
   const row0B = fileB.rows[0];
   if (!row0A && !row0B) return null;
 
-  const buildPreview = (cols: number[], row: string[] | undefined, sep: string) => {
+  const buildPreview = (cols: number[], seps: string[], row: string[] | undefined) => {
     if (!row || cols.length === 0) return null;
-    return cols
-      .map((c) => applyTransform(row[c] ?? "", group.transform))
-      .join(sep);
+    const parts = cols.map((c) => applyTransform(row[c] ?? "", group.transform));
+    if (parts.length === 1) return parts[0];
+    const filled = fillSeparators(cols, seps, group.separator);
+    let out = parts[0];
+    for (let i = 1; i < parts.length; i++) {
+      out += (filled[i - 1] ?? group.separator) + parts[i];
+    }
+    return out;
   };
 
-  const previewA = buildPreview(group.colsA, row0A, group.separator);
-  const previewB = buildPreview(group.colsB, row0B, group.separator);
+  const previewA = buildPreview(group.colsA, group.separatorsA, row0A);
+  const previewB = buildPreview(group.colsB, group.separatorsB, row0B);
   const match = previewA !== null && previewB !== null && previewA === previewB;
 
   return (
     <div className={cn("text-xs px-3 py-1.5 rounded", color.bg, color.text)}>
-      <span className="opacity-70">Aperçu : </span>
-      {previewA !== null && (
-        <span className="font-mono font-medium">&ldquo;{previewA}&rdquo;</span>
-      )}
-      {previewA !== null && previewB !== null && (
-        <span className="mx-1.5">↔</span>
-      )}
-      {previewB !== null && (
-        <span className="font-mono font-medium">&ldquo;{previewB}&rdquo;</span>
-      )}
+      <span className="opacity-70">Apercu : </span>
+      {previewA !== null && <span className="font-mono font-medium">&quot;{previewA}&quot;</span>}
+      {previewA !== null && previewB !== null && <span className="mx-1.5">↔</span>}
+      {previewB !== null && <span className="font-mono font-medium">&quot;{previewB}&quot;</span>}
       {match && <span className="ml-1.5 text-green-700">✓</span>}
       {previewA !== null && previewB !== null && !match && (
         <span className="ml-1.5 text-red-600">✗</span>
@@ -304,164 +394,180 @@ export function ConfigurationStep({
 }: ConfigurationStepProps) {
   const [keyGroups, setKeyGroups] = useState<KeyGroup[]>(() => {
     if (initialConfig?.keyMappings) {
-      return initialConfig.keyMappings.map((m) => ({
-        colsA: [...m.colsA],
-        colsB: [...m.colsB],
-        separator: m.separator,
-        transform: m.transform,
+      return initialConfig.keyMappings.map((mapping) => ({
+        colsA: [...mapping.colsA],
+        colsB: [...mapping.colsB],
+        separator: mapping.separator,
+        separatorsA: fillSeparators(mapping.colsA, mapping.separatorsA ?? [], mapping.separator),
+        separatorsB: fillSeparators(mapping.colsB, mapping.separatorsB ?? [], mapping.separator),
+        transform: mapping.transform,
       }));
     }
+
     return [];
   });
-  const [amountColA, setAmountColA] = useState<number | null>(
-    initialConfig?.amountColumnA ?? null
-  );
-  const [amountColB, setAmountColB] = useState<number | null>(
-    initialConfig?.amountColumnB ?? null
-  );
+  const [amountColA, setAmountColA] = useState<number | null>(initialConfig?.amountColumnA ?? null);
+  const [amountColB, setAmountColB] = useState<number | null>(initialConfig?.amountColumnB ?? null);
   const [error, setError] = useState<string | null>(null);
-  const [activeSelection, setActiveSelection] = useState<ActiveSelection>(null);
+  const [keyDialog, setKeyDialog] = useState<KeyDialogState | null>(null);
 
   const isKeyValidated = (group: KeyGroup) => group.colsA.length > 0 && group.colsB.length > 0;
 
-  const isKeyActive = (index: number) =>
-    activeSelection?.type === "key" && activeSelection.groupIndex === index;
-
-  const addKeyGroup = () => {
-    const newIndex = keyGroups.length;
-    setKeyGroups((prev) => [...prev, { colsA: [], colsB: [], separator: "", transform: "default" }]);
-    setActiveSelection({ type: "key", groupIndex: newIndex, side: "A" });
-  };
-
-  const removeKeyGroup = (index: number) => {
+  const removeKeyGroup = useCallback((index: number) => {
     setKeyGroups((prev) => prev.filter((_, i) => i !== index));
-    if (activeSelection?.type === "key" && activeSelection.groupIndex === index) {
-      setActiveSelection(null);
-    }
-  };
-
-  const removeColFromGroup = (groupIndex: number, side: "A" | "B", colIdx: number) => {
-    setKeyGroups((prev) =>
-      prev.map((g, i) => {
-        if (i !== groupIndex) return g;
-        const key = side === "A" ? "colsA" : "colsB";
-        return { ...g, [key]: g[key].filter((c) => c !== colIdx) };
-      })
-    );
-  };
-
-  const updateGroupTransform = (index: number, value: KeyTransform) => {
-    setKeyGroups((prev) =>
-      prev.map((g, i) => (i === index ? { ...g, transform: value } : g))
-    );
-  };
-
-  const updateGroupSeparator = (index: number, value: string) => {
-    setKeyGroups((prev) =>
-      prev.map((g, i) => (i === index ? { ...g, separator: value } : g))
-    );
-  };
-
-  const handleColumnClick = (side: "A" | "B", colIdx: number) => {
-    if (!activeSelection || activeSelection.side !== side) return;
-
-    if (activeSelection.type === "key") {
-      const { groupIndex } = activeSelection;
-      const field = side === "A" ? "colsA" : "colsB";
-
-      setKeyGroups((prev) =>
-        prev.map((g, i) => {
-          if (i !== groupIndex) return g;
-          // Toggle: if already selected, remove it
-          if (g[field].includes(colIdx)) {
-            return { ...g, [field]: g[field].filter((c) => c !== colIdx) };
-          }
-          return { ...g, [field]: [...g[field], colIdx] };
-        })
-      );
-
-      // Auto-advance for 1:1 case: after first click on A, move to B
-      const group = keyGroups[groupIndex];
-      if (side === "A" && group.colsA.length === 0) {
-        // This is the first click on A (group hasn't been updated yet, so check length 0)
-        setTimeout(() => {
-          setActiveSelection({ type: "key", groupIndex, side: "B" });
-        }, 0);
-      } else if (side === "B" && group.colsB.length === 0) {
-        // First click on B: auto-complete
-        setTimeout(() => {
-          setActiveSelection(null);
-        }, 0);
+    setKeyDialog((prev) => {
+      if (prev?.mode === "edit" && prev.index === index) {
+        return null;
       }
-    } else if (activeSelection.type === "amount") {
-      if (side === "A") {
-        setAmountColA(colIdx);
-        setActiveSelection({ type: "amount", side: "B" });
-      } else {
-        setAmountColB(colIdx);
-        setActiveSelection(null);
-      }
-    }
-  };
+      return prev;
+    });
+  }, []);
 
-  // Handle Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && activeSelection) {
-        if (activeSelection.type === "key") {
-          const group = keyGroups[activeSelection.groupIndex];
-          if (group && group.colsA.length === 0 && group.colsB.length === 0) {
-            removeKeyGroup(activeSelection.groupIndex);
-          }
+  const openCreateDialog = useCallback(() => {
+    setKeyDialog({
+      mode: "create",
+      index: null,
+      draft: createEmptyKeyGroup(),
+      error: null,
+    });
+  }, []);
+
+  const openEditDialog = useCallback((index: number) => {
+    setKeyDialog({
+      mode: "edit",
+      index,
+      draft: cloneKeyGroup(keyGroups[index]),
+      error: null,
+    });
+  }, [keyGroups]);
+
+  const closeKeyDialog = useCallback(() => {
+    setKeyDialog(null);
+  }, []);
+
+  const updateDialogDraft = useCallback((updater: (draft: KeyGroup) => KeyGroup) => {
+    setKeyDialog((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        draft: updater(prev.draft),
+        error: null,
+      };
+    });
+  }, []);
+
+  const handleDialogColumnClick = useCallback((side: "A" | "B", colIdx: number) => {
+    setKeyDialog((prev) => {
+      if (!prev) return prev;
+
+      const colsField = side === "A" ? "colsA" : "colsB";
+      const sepsField = side === "A" ? "separatorsA" : "separatorsB";
+      const existingCols = prev.draft[colsField];
+      const existingSeps = prev.draft[sepsField];
+      const isRemoving = existingCols.includes(colIdx);
+
+      let nextCols: number[];
+      let nextSeps: string[];
+
+      if (isRemoving) {
+        const position = existingCols.indexOf(colIdx);
+        nextCols = existingCols.filter((_, i) => i !== position);
+        if (existingSeps.length === 0) {
+          nextSeps = [];
+        } else {
+          const dropIdx = Math.min(position, existingSeps.length - 1);
+          nextSeps = existingSeps.filter((_, i) => i !== dropIdx);
         }
-        setActiveSelection(null);
+      } else {
+        nextCols = [...existingCols, colIdx];
+        nextSeps = existingCols.length > 0 ? [...existingSeps, ""] : existingSeps;
       }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [activeSelection, keyGroups]);
+
+      return {
+        ...prev,
+        draft: {
+          ...prev.draft,
+          [colsField]: nextCols,
+          [sepsField]: nextSeps,
+        },
+        error: null,
+      };
+    });
+  }, []);
+
+  const handleSeparatorChange = useCallback(
+    (side: "A" | "B", position: number, value: string) => {
+      setKeyDialog((prev) => {
+        if (!prev) return prev;
+        const sepsField = side === "A" ? "separatorsA" : "separatorsB";
+        const current = prev.draft[sepsField];
+        if (position < 0 || position >= current.length) return prev;
+        const next = [...current];
+        next[position] = value;
+        return {
+          ...prev,
+          draft: {
+            ...prev.draft,
+            [sepsField]: next,
+          },
+          error: null,
+        };
+      });
+    },
+    []
+  );
+
+  const saveKeyDialog = useCallback(() => {
+    if (!keyDialog) return;
+
+    const validationError = validateKeyGroup(keyDialog.draft);
+    if (validationError) {
+      setKeyDialog((prev) => (prev ? { ...prev, error: validationError } : prev));
+      return;
+    }
+
+    if (keyDialog.mode === "create") {
+      setKeyGroups((prev) => [...prev, cloneKeyGroup(keyDialog.draft)]);
+    } else if (keyDialog.index !== null) {
+      setKeyGroups((prev) =>
+        prev.map((group, index) => (index === keyDialog.index ? cloneKeyGroup(keyDialog.draft) : group))
+      );
+    }
+
+    setKeyDialog(null);
+  }, [keyDialog]);
 
   const handleSubmit = () => {
     setError(null);
-    setActiveSelection(null);
 
     const validGroups = keyGroups.filter(isKeyValidated);
 
     if (validGroups.length === 0) {
-      setError("Ajoutez au moins une clé de rapprochement");
+      setError("Ajoutez au moins une cle de rapprochement");
       return;
     }
 
-    const incompleteGroups = keyGroups.filter((g) => !isKeyValidated(g));
+    const incompleteGroups = keyGroups.filter((group) => !isKeyValidated(group));
     if (incompleteGroups.length > 0) {
-      setError("Certaines clés ne sont pas complètes. Terminez-les ou supprimez-les.");
+      setError("Certaines cles ne sont pas completes.");
       return;
-    }
-
-    // Validate separator for multi-column keys
-    for (let i = 0; i < validGroups.length; i++) {
-      const g = validGroups[i];
-      if ((g.colsA.length > 1 || g.colsB.length > 1) && g.separator.length === 0) {
-        setError(`La clé ${i + 1} a plusieurs colonnes mais pas de séparateur. Ajoutez un séparateur pour éviter les collisions.`);
-        return;
-      }
     }
 
     if (
       (amountColA !== null && amountColB === null) ||
       (amountColA === null && amountColB !== null)
     ) {
-      setError(
-        "Veuillez sélectionner la colonne de montant pour les deux fichiers, ou aucun des deux"
-      );
+      setError("Selectionnez la colonne de montant pour les deux fichiers, ou aucun des deux.");
       return;
     }
 
-    const keyMappings: KeyMapping[] = validGroups.map((g) => ({
-      colsA: g.colsA,
-      colsB: g.colsB,
-      separator: g.separator,
-      transform: g.transform,
+    const keyMappings: KeyMapping[] = validGroups.map((group) => ({
+      colsA: group.colsA,
+      colsB: group.colsB,
+      separator: group.separator,
+      separatorsA: fillSeparators(group.colsA, group.separatorsA, group.separator),
+      separatorsB: fillSeparators(group.colsB, group.separatorsB, group.separator),
+      transform: group.transform,
     }));
 
     onSubmit({
@@ -471,396 +577,131 @@ export function ConfigurationStep({
     });
   };
 
-  const getColName = (file: ParsedFile, colIdx: number) => {
-    return file.headers[colIdx] || `Col ${colIdx + 1}`;
-  };
-
-  const getSampleValues = (file: ParsedFile, cols: number[], maxSamples = 2) => {
-    return file.rows.slice(0, maxSamples).map((row) =>
-      cols.map((c) => row[c] ?? "").join(", ")
-    );
-  };
-
-  const selectionInstruction = (() => {
-    if (!activeSelection) return null;
-    const file = activeSelection.side === "A" ? fileA : fileB;
-    const fileName = baseName(file.fileName);
-    if (activeSelection.type === "key") {
-      const color = PAIR_COLORS[activeSelection.groupIndex % PAIR_COLORS.length];
-      return (
-        <div
-          className={cn(
-            "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium",
-            color.bg,
-            color.text
-          )}
-        >
-          <span>
-            Cliquez sur une colonne dans{" "}
-            <span className="font-bold">{fileName}</span>{" "}
-            pour la Clé {activeSelection.groupIndex + 1}
-            {activeSelection.side === "A" && keyGroups[activeSelection.groupIndex]?.colsA.length > 0 && (
-              <span className="ml-1 opacity-60">(ou cliquez &ldquo;Suivant&rdquo; pour passer au fichier B)</span>
-            )}
-          </span>
-          <button
-            onClick={() => setActiveSelection(null)}
-            className="ml-auto text-xs opacity-60 hover:opacity-100"
-          >
-            Annuler
-          </button>
-        </div>
-      );
-    }
-    return (
-      <div
-        className={cn(
-          "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium",
-          AMOUNT_COLOR.bg,
-          AMOUNT_COLOR.text
-        )}
-      >
-        <span>
-          Cliquez sur une colonne dans{" "}
-          <span className="font-bold">{fileName}</span>{" "}
-          pour le Montant
-        </span>
-        <button
-          onClick={() => setActiveSelection(null)}
-          className="ml-auto text-xs opacity-60 hover:opacity-100"
-        >
-          Annuler
-        </button>
-      </div>
-    );
-  })();
-
-  const previewsCollapsed = activeSelection === null;
-
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-sm text-muted-foreground">
-        Définissez les clés de rapprochement entre vos deux fichiers
-      </p>
-
-      {selectionInstruction}
-
-      {/* Key list */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Clés de rapprochement</CardTitle>
-          <CardDescription>
-            Ajoutez une clé, puis sélectionnez la colonne correspondante dans chaque fichier
-          </CardDescription>
+          <CardTitle className="text-lg">Cles de rapprochement</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {keyGroups.length === 0 && !activeSelection && (
-            <p className="text-sm text-muted-foreground italic py-2">
-              Aucune clé définie. Ajoutez une clé pour commencer.
+          {keyGroups.length === 0 && (
+            <p className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+              Aucune cle de rapprochement
             </p>
           )}
+
           {keyGroups.map((group, index) => {
             const color = PAIR_COLORS[index % PAIR_COLORS.length];
-            const validated = isKeyValidated(group);
-            const active = isKeyActive(index);
-            const isActiveA =
-              activeSelection?.type === "key" &&
-              activeSelection.groupIndex === index &&
-              activeSelection.side === "A";
-            const isActiveB =
-              activeSelection?.type === "key" &&
-              activeSelection.groupIndex === index &&
-              activeSelection.side === "B";
-            const hasMultipleCols = group.colsA.length > 1 || group.colsB.length > 1;
 
             return (
               <div
                 key={index}
                 className={cn(
-                  "flex flex-col gap-2 rounded-lg px-3 py-3 transition-all",
-                  validated && !active
-                    ? `${color.cellBg} border border-transparent`
-                    : active
-                    ? `bg-muted/30 border ${color.activeBorder}`
-                    : "border border-dashed border-muted-foreground/30"
+                  "flex flex-col gap-3 rounded-lg border px-3 py-3",
+                  isKeyValidated(group) ? color.cellBg : "border-dashed border-muted-foreground/30"
                 )}
               >
-                <div className="flex items-center gap-2">
-                  {/* Validation indicator + badge */}
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {validated && !active ? (
-                      <span className="text-green-600 text-sm">&#10003;</span>
-                    ) : (
-                      <span className="text-muted-foreground/40 text-sm">&#9675;</span>
-                    )}
-                    <span
-                      className={cn(
-                        "text-xs font-semibold px-2 py-0.5 rounded-full",
-                        color.badge
-                      )}
-                    >
-                      Clé {index + 1}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", color.badge)}>
+                      Cle {index + 1}
                     </span>
+                    {isKeyValidated(group) && <span className="text-green-600 text-sm">✓</span>}
                   </div>
-
-                  {/* Columns A - chips */}
-                  <div
-                    className={cn(
-                      "flex-1 min-w-0 flex items-center gap-1 flex-wrap min-h-[28px] px-2 py-1 rounded border text-sm transition-all",
-                      isActiveA
-                        ? `${color.bg} ${color.text} ${color.activeBorder} ring-2 ${color.ring}`
-                        : group.colsA.length > 0
-                        ? `${color.bg} ${color.text} border-transparent`
-                        : "text-muted-foreground border-dashed border-muted-foreground/40"
-                    )}
-                    onClick={() =>
-                      setActiveSelection({ type: "key", groupIndex: index, side: "A" })
-                    }
-                  >
-                    {group.colsA.length > 0 ? (
-                      group.colsA.map((colIdx, ci) => (
-                        <span key={colIdx} className="flex items-center gap-0.5">
-                          {ci > 0 && group.separator && (
-                            <span className="text-xs opacity-50 mx-0.5">{group.separator}</span>
-                          )}
-                          <span className={cn("px-1.5 py-0.5 rounded text-xs", color.badge)}>
-                            {getColName(fileA, colIdx)}
-                            {(active || isActiveA) && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeColFromGroup(index, "A", colIdx);
-                                }}
-                                className="ml-1 opacity-60 hover:opacity-100"
-                              >
-                                ×
-                              </button>
-                            )}
-                          </span>
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-xs opacity-60">
-                        {isActiveA ? "← cliquez dans le tableau" : `Choisir dans ${baseName(fileA.fileName)}`}
-                      </span>
-                    )}
-                    {isActiveA && group.colsA.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveSelection({ type: "key", groupIndex: index, side: "B" });
-                        }}
-                        className={cn("text-xs ml-auto px-1.5 py-0.5 rounded", color.badge, "opacity-80 hover:opacity-100")}
-                      >
-                        Suivant →
-                      </button>
-                    )}
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => openEditDialog(index)}>
+                      Modifier
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeKeyGroup(index)}
+                      className="h-8 w-8 p-0"
+                    >
+                      x
+                    </Button>
                   </div>
-
-                  <span className="text-muted-foreground text-sm flex-shrink-0">&#8596;</span>
-
-                  {/* Columns B - chips */}
-                  <div
-                    className={cn(
-                      "flex-1 min-w-0 flex items-center gap-1 flex-wrap min-h-[28px] px-2 py-1 rounded border text-sm transition-all",
-                      isActiveB
-                        ? `${color.bg} ${color.text} ${color.activeBorder} ring-2 ${color.ring}`
-                        : group.colsB.length > 0
-                        ? `${color.bg} ${color.text} border-transparent`
-                        : "text-muted-foreground border-dashed border-muted-foreground/40"
-                    )}
-                    onClick={() =>
-                      setActiveSelection({ type: "key", groupIndex: index, side: "B" })
-                    }
-                  >
-                    {group.colsB.length > 0 ? (
-                      group.colsB.map((colIdx, ci) => (
-                        <span key={colIdx} className="flex items-center gap-0.5">
-                          {ci > 0 && group.separator && (
-                            <span className="text-xs opacity-50 mx-0.5">{group.separator}</span>
-                          )}
-                          <span className={cn("px-1.5 py-0.5 rounded text-xs", color.badge)}>
-                            {getColName(fileB, colIdx)}
-                            {(active || isActiveB) && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeColFromGroup(index, "B", colIdx);
-                                }}
-                                className="ml-1 opacity-60 hover:opacity-100"
-                              >
-                                ×
-                              </button>
-                            )}
-                          </span>
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-xs opacity-60">
-                        {isActiveB ? "← cliquez dans le tableau" : `Choisir dans ${baseName(fileB.fileName)}`}
-                      </span>
-                    )}
-                    {isActiveB && group.colsB.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveSelection(null);
-                        }}
-                        className={cn("text-xs ml-auto px-1.5 py-0.5 rounded", color.badge, "opacity-80 hover:opacity-100")}
-                      >
-                        Terminer ✓
-                      </button>
-                    )}
-                  </div>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeKeyGroup(index)}
-                    className="h-7 w-7 p-0 flex-shrink-0"
-                  >
-                    &#10005;
-                  </Button>
                 </div>
 
-                {/* Separator input - show when multi-column */}
-                {hasMultipleCols && (
-                  <div className="flex items-center gap-2 pl-[72px]">
-                    <Label
-                      htmlFor={`separator-${index}`}
-                      className="text-xs text-muted-foreground whitespace-nowrap"
-                    >
-                      Séparateur :
-                    </Label>
-                    <input
-                      id={`separator-${index}`}
-                      type="text"
-                      value={group.separator}
-                      onChange={(e) => updateGroupSeparator(index, e.target.value)}
-                      placeholder="ex: - ou _"
-                      className="w-24 text-xs border rounded px-2 py-1"
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-muted-foreground">{baseName(fileA.fileName)}</p>
+                    <KeyChips
+                      file={fileA}
+                      columns={group.colsA}
+                      color={color}
+                      emptyLabel="Aucune colonne"
                     />
                   </div>
-                )}
-
-                {/* Transform - show when validated or active */}
-                {(validated || active) && (
-                  <div className="flex items-center gap-2 pl-[72px]">
-                    <Label
-                      htmlFor={`transform-${index}`}
-                      className="text-xs text-muted-foreground whitespace-nowrap"
-                    >
-                      Transformation :
-                    </Label>
-                    <TransformSelect
-                      id={`transform-${index}`}
-                      value={group.transform}
-                      onChange={(v) => updateGroupTransform(index, v)}
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-muted-foreground">{baseName(fileB.fileName)}</p>
+                    <KeyChips
+                      file={fileB}
+                      columns={group.colsB}
+                      color={color}
+                      emptyLabel="Aucune colonne"
                     />
                   </div>
-                )}
+                </div>
 
-                {/* Live key preview */}
-                {(validated || (group.colsA.length > 0 || group.colsB.length > 0)) && (
-                  <div className="pl-[72px]">
-                    <KeyPreview fileA={fileA} fileB={fileB} group={group} color={color} />
+                {group.transform !== "default" && (
+                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span>Transformation : {group.transform}</span>
                   </div>
                 )}
 
-                {/* Sample values for validated keys */}
-                {validated && !active && (
-                  <div className="flex gap-4 pl-[72px] text-[10px] text-muted-foreground">
-                    <div>
-                      {getSampleValues(fileA, group.colsA).map((v, i) => (
-                        <div key={i} className="truncate max-w-[200px]">{v}</div>
-                      ))}
-                    </div>
-                    <div>
-                      {getSampleValues(fileB, group.colsB).map((v, i) => (
-                        <div key={i} className="truncate max-w-[200px]">{v}</div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <KeyPreview fileA={fileA} fileB={fileB} group={group} color={color} />
               </div>
             );
           })}
-          <Button variant="outline" size="sm" onClick={addKeyGroup} className="w-fit">
-            + Ajouter une clé
+
+          <Button variant="outline" size="sm" onClick={openCreateDialog} className="w-fit">
+            Ajouter une cle de rapprochement
           </Button>
         </CardContent>
       </Card>
 
-      {/* Spreadsheet previews - collapsible */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-sm font-medium mb-1.5">{baseName(fileA.fileName)}</p>
-          <SpreadsheetPreview
-            file={fileA}
-            side="A"
-            keyGroups={keyGroups}
-            amountCol={amountColA}
-            activeSelection={activeSelection}
-            onColumnClick={(colIdx) => handleColumnClick("A", colIdx)}
-            collapsed={previewsCollapsed}
-          />
-        </div>
-        <div>
-          <p className="text-sm font-medium mb-1.5">{baseName(fileB.fileName)}</p>
-          <SpreadsheetPreview
-            file={fileB}
-            side="B"
-            keyGroups={keyGroups}
-            amountCol={amountColB}
-            activeSelection={activeSelection}
-            onColumnClick={(colIdx) => handleColumnClick("B", colIdx)}
-            collapsed={previewsCollapsed}
-          />
-        </div>
-      </div>
-
-      {/* Amount column */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Colonne de montant</CardTitle>
-          <CardDescription>
-            Optionnel — permet de détecter les écarts de montants entre lignes correspondantes
-          </CardDescription>
+          <CardTitle className="text-lg">Montants</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveSelection({ type: "amount", side: "A" })}
-              className={cn(
-                "flex-1 text-sm px-2 py-1.5 rounded border text-left truncate transition-all",
-                activeSelection?.type === "amount" && activeSelection.side === "A"
-                  ? `${AMOUNT_COLOR.bg} ${AMOUNT_COLOR.text} ${AMOUNT_COLOR.activeBorder} ring-2 ${AMOUNT_COLOR.ring}`
-                  : amountColA !== null
-                  ? `${AMOUNT_COLOR.bg} ${AMOUNT_COLOR.text} border-transparent hover:${AMOUNT_COLOR.activeBorder}`
-                  : "text-muted-foreground border-dashed border-muted-foreground/40 hover:border-muted-foreground/70"
-              )}
-            >
-              {amountColA !== null
-                ? getColName(fileA, amountColA)
-                : `Choisir dans ${baseName(fileA.fileName)}`}
-            </button>
-            <span className="text-muted-foreground text-sm flex-shrink-0">&#8596;</span>
-            <button
-              onClick={() => setActiveSelection({ type: "amount", side: "B" })}
-              className={cn(
-                "flex-1 text-sm px-2 py-1.5 rounded border text-left truncate transition-all",
-                activeSelection?.type === "amount" && activeSelection.side === "B"
-                  ? `${AMOUNT_COLOR.bg} ${AMOUNT_COLOR.text} ${AMOUNT_COLOR.activeBorder} ring-2 ${AMOUNT_COLOR.ring}`
-                  : amountColB !== null
-                  ? `${AMOUNT_COLOR.bg} ${AMOUNT_COLOR.text} border-transparent hover:${AMOUNT_COLOR.activeBorder}`
-                  : "text-muted-foreground border-dashed border-muted-foreground/40 hover:border-muted-foreground/70"
-              )}
-            >
-              {amountColB !== null
-                ? getColName(fileB, amountColB)
-                : `Choisir dans ${baseName(fileB.fileName)}`}
-            </button>
-            {(amountColA !== null || amountColB !== null) && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="amount-col-a">{baseName(fileA.fileName)}</Label>
+              <select
+                id="amount-col-a"
+                value={amountColA ?? ""}
+                onChange={(e) => setAmountColA(e.target.value === "" ? null : Number(e.target.value))}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="">Aucune colonne</option>
+                {fileA.headers.map((header, index) => (
+                  <option key={index} value={index}>
+                    {header || `Col ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="amount-col-b">{baseName(fileB.fileName)}</Label>
+              <select
+                id="amount-col-b"
+                value={amountColB ?? ""}
+                onChange={(e) => setAmountColB(e.target.value === "" ? null : Number(e.target.value))}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="">Aucune colonne</option>
+                {fileB.headers.map((header, index) => (
+                  <option key={index} value={index}>
+                    {header || `Col ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {(amountColA !== null || amountColB !== null) && (
+            <div className="pt-3">
               <Button
                 variant="ghost"
                 size="sm"
@@ -868,16 +709,15 @@ export function ConfigurationStep({
                   setAmountColA(null);
                   setAmountColB(null);
                 }}
-                className="h-7 w-7 p-0 flex-shrink-0 text-muted-foreground"
+                className="px-0 text-muted-foreground"
               >
-                &#10005;
+                Reinitialiser les montants
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Deduplication */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Options</CardTitle>
@@ -889,14 +729,11 @@ export function ConfigurationStep({
               checked={deduplication}
               onCheckedChange={onDeduplicationChange}
             />
-            <Label htmlFor="dedup">
-              Dédupliquer les lignes ayant la même clé
-            </Label>
+            <Label htmlFor="dedup">Dedupliquer les lignes ayant la meme cle</Label>
           </div>
           {deduplication && (
             <p className="text-xs text-muted-foreground mt-2">
-              Les lignes en double basées sur la clé définie seront regroupées.
-              Seule la première occurrence sera utilisée.
+              Seule la premiere occurrence sera utilisee.
             </p>
           )}
         </CardContent>
@@ -904,17 +741,12 @@ export function ConfigurationStep({
 
       {warnings && warnings.length > 0 && (
         <div className="p-3 bg-orange-50 border border-orange-200 rounded-md">
-          <p className="text-sm font-medium text-orange-700 mb-1">
-            Colonnes du modèle non trouvées :
-          </p>
+          <p className="text-sm font-medium text-orange-700 mb-1">Colonnes introuvables :</p>
           <ul className="text-sm text-orange-600 list-disc list-inside">
-            {warnings.map((w, i) => (
-              <li key={i}>{w}</li>
+            {warnings.map((warning, index) => (
+              <li key={index}>{warning}</li>
             ))}
           </ul>
-          <p className="text-xs text-orange-500 mt-1">
-            Corrigez le mapping manuellement avant de lancer le rapprochement.
-          </p>
         </div>
       )}
 
@@ -928,6 +760,111 @@ export function ConfigurationStep({
           {isLoading ? "Traitement en cours..." : "Lancer le rapprochement"}
         </Button>
       </div>
+
+      <Dialog open={keyDialog !== null} onOpenChange={(open) => !open && closeKeyDialog()}>
+        {keyDialog && (
+          <DialogContent className="sm:max-w-6xl">
+            <DialogHeader>
+              <DialogTitle>
+                {keyDialog.mode === "create" ? "Ajouter une cle" : `Modifier la cle ${keyDialog.index! + 1}`}
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="flex flex-col gap-4">
+              <div className="grid gap-2 md:grid-cols-[140px_1fr] md:items-center">
+                <Label htmlFor="dialog-transform">Transformation</Label>
+                <TransformSelect
+                  id="dialog-transform"
+                  value={keyDialog.draft.transform}
+                  onChange={(value) =>
+                    updateDialogDraft((draft) => ({ ...draft, transform: value }))
+                  }
+                />
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Cliquez sur une colonne pour l&apos;ajouter ou la retirer de la cle.
+              </p>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <p className="text-sm font-medium">{baseName(fileA.fileName)}</p>
+                  <SpreadsheetPreview
+                    file={fileA}
+                    side="A"
+                    group={keyDialog.draft}
+                    color={PAIR_COLORS[(keyDialog.index ?? keyGroups.length) % PAIR_COLORS.length]}
+                    onColumnClick={(colIdx) => handleDialogColumnClick("A", colIdx)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-sm font-medium">{baseName(fileB.fileName)}</p>
+                  <SpreadsheetPreview
+                    file={fileB}
+                    side="B"
+                    group={keyDialog.draft}
+                    color={PAIR_COLORS[(keyDialog.index ?? keyGroups.length) % PAIR_COLORS.length]}
+                    onColumnClick={(colIdx) => handleDialogColumnClick("B", colIdx)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">Colonnes selectionnees</p>
+                  <EditableKeyChips
+                    file={fileA}
+                    columns={keyDialog.draft.colsA}
+                    separators={keyDialog.draft.separatorsA}
+                    color={PAIR_COLORS[(keyDialog.index ?? keyGroups.length) % PAIR_COLORS.length]}
+                    emptyLabel="Aucune colonne"
+                    onRemove={(position) =>
+                      handleDialogColumnClick("A", keyDialog.draft.colsA[position])
+                    }
+                    onSeparatorChange={(position, value) =>
+                      handleSeparatorChange("A", position, value)
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">Colonnes selectionnees</p>
+                  <EditableKeyChips
+                    file={fileB}
+                    columns={keyDialog.draft.colsB}
+                    separators={keyDialog.draft.separatorsB}
+                    color={PAIR_COLORS[(keyDialog.index ?? keyGroups.length) % PAIR_COLORS.length]}
+                    emptyLabel="Aucune colonne"
+                    onRemove={(position) =>
+                      handleDialogColumnClick("B", keyDialog.draft.colsB[position])
+                    }
+                    onSeparatorChange={(position, value) =>
+                      handleSeparatorChange("B", position, value)
+                    }
+                  />
+                </div>
+              </div>
+
+              <KeyPreview
+                fileA={fileA}
+                fileB={fileB}
+                group={keyDialog.draft}
+                color={PAIR_COLORS[(keyDialog.index ?? keyGroups.length) % PAIR_COLORS.length]}
+              />
+
+              {keyDialog.error && <p className="text-sm text-red-500">{keyDialog.error}</p>}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={closeKeyDialog}>
+                Annuler
+              </Button>
+              <Button onClick={saveKeyDialog}>
+                {keyDialog.mode === "create" ? "Ajouter" : "Enregistrer"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   );
 }

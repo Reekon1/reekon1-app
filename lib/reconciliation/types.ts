@@ -73,7 +73,12 @@ export type KeyTransform =
 export interface KeyMapping {
   colsA: number[];
   colsB: number[];
+  // Single fallback separator — kept for backward compat with older templates.
+  // If separatorsA/separatorsB are provided, they take precedence per position.
   separator: string;
+  // Per-gap separators for each side (length = max(0, cols.length - 1)).
+  separatorsA?: string[];
+  separatorsB?: string[];
   transform: KeyTransform;
 }
 

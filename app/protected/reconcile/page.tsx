@@ -7,12 +7,11 @@ import { UploadStep } from "@/components/reconcile/upload-step";
 import { ScopeStep } from "@/components/reconcile/scope-step";
 import { ConfigurationStep, type ConfigurationConfig } from "@/components/reconcile/configuration-step";
 import { ResultsDashboard } from "@/components/reconcile/results-dashboard";
-import { ManualReconciliation } from "@/components/reconcile/manual-reconciliation";
+import { ManualReconciliationModal } from "@/components/reconcile/manual-reconciliation-modal";
 import { parseFile } from "@/lib/reconciliation/parser";
 import { reconcile } from "@/lib/reconciliation/engine";
 import { getTemplate } from "@/lib/actions/templates";
 import { fromTemplateConfig } from "@/lib/types/template";
-import { computeSuggestionsAsync, type SimilaritySuggestion } from "@/lib/reconciliation/similarity";
 import type { TemplateConfig } from "@/lib/types/template";
 import {
   toParsedFile,
@@ -70,12 +69,35 @@ function ReconcilePageInner() {
   const [templateConfig, setTemplateConfig] = useState<TemplateConfig | null>(null);
 
   // Manual reconciliation state
-  const [manualStep, setManualStep] = useState<"none" | "computing" | "selecting" | "done">("none");
-  const [suggestions, setSuggestions] = useState<SimilaritySuggestion[]>([]);
   const [manualMatches, setManualMatches] = useState<ManualMatch[]>([]);
-  const [capturedUniqueA, setCapturedUniqueA] = useState<UniqueRow[]>([]);
-  const [capturedUniqueB, setCapturedUniqueB] = useState<UniqueRow[]>([]);
-  const [computeProgress, setComputeProgress] = useState({ current: 0, total: 0 });
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+
+  const resetToConfigurationStep = useCallback(() => {
+    setShowResults(false);
+    setCurrentStep(2);
+    setManualMatches([]);
+    setManualModalOpen(false);
+  }, []);
+
+  const handleBackToConfiguration = useCallback(() => {
+    if (showResults && window.history.state?.results) {
+      window.history.back();
+      return;
+    }
+
+    resetToConfigurationStep();
+  }, [showResults, resetToConfigurationStep]);
+
+  // Browser back button: return to configuration from results
+  useEffect(() => {
+    const onPopState = () => {
+      if (showResults) {
+        resetToConfigurationStep();
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [showResults, resetToConfigurationStep]);
 
   // Track headers to detect changes and reset columns config
   const prevHeadersRef = useRef<string>("");
@@ -105,6 +127,9 @@ function ReconcilePageInner() {
     if (!templateConfig || !parsedA || !parsedB) return null;
     return fromTemplateConfig(templateConfig, parsedA.headers, parsedB.headers);
   }, [templateConfig, parsedA, parsedB]);
+
+  const configurationInitialState = lastConfig ?? appliedTemplate?.config;
+  const configurationWarnings = lastConfig ? undefined : appliedTemplate?.warnings;
 
   // Apply template scope values
   useEffect(() => {
@@ -189,10 +214,10 @@ function ReconcilePageInner() {
         setResult(res);
         setLastConfig(config);
         setShowResults(true);
+        window.history.pushState({ results: true }, "");
         // Reset manual reconciliation state
-        setManualStep("none");
-        setSuggestions([]);
         setManualMatches([]);
+        setManualModalOpen(false);
       } catch (err) {
         console.error("Reconciliation error:", err);
       } finally {
@@ -202,48 +227,46 @@ function ReconcilePageInner() {
     [parsedA, parsedB, excludeFooterA, excludeFooterB, deduplication]
   );
 
-  const handleStartManualReconciliation = useCallback(async () => {
+  // Unique rows excluding those already matched manually, along with the
+  // original-index mapping so confirmed matches can be persisted consistently
+  // across multiple passes.
+  const remaining = useMemo(() => {
+    if (!result) {
+      return {
+        a: [] as UniqueRow[],
+        b: [] as UniqueRow[],
+        origA: [] as number[],
+        origB: [] as number[],
+      };
+    }
+    const usedA = new Set(manualMatches.map((m) => m.indexA));
+    const usedB = new Set(manualMatches.map((m) => m.indexB));
+    const a: UniqueRow[] = [];
+    const b: UniqueRow[] = [];
+    const origA: number[] = [];
+    const origB: number[] = [];
+    result.uniqueA.forEach((u, i) => {
+      if (!usedA.has(i)) {
+        a.push(u);
+        origA.push(i);
+      }
+    });
+    result.uniqueB.forEach((u, i) => {
+      if (!usedB.has(i)) {
+        b.push(u);
+        origB.push(i);
+      }
+    });
+    return { a, b, origA, origB };
+  }, [result, manualMatches]);
+
+  const handleOpenManualModal = useCallback(() => {
     if (!result) return;
-
-    // Capture unique rows at this moment (stale reference guard)
-    const captA = [...result.uniqueA];
-    const captB = [...result.uniqueB];
-    setCapturedUniqueA(captA);
-    setCapturedUniqueB(captB);
-
-    setManualStep("computing");
-    setComputeProgress({ current: 0, total: captA.length });
-
-    const sug = await computeSuggestionsAsync(
-      captA,
-      captB,
-      (current, total) => setComputeProgress({ current, total }),
-    );
-
-    setSuggestions(sug);
-    setManualStep("selecting");
+    setManualModalOpen(true);
   }, [result]);
 
-  const handleManualConfirm = useCallback(
-    (selectedPairs: SimilaritySuggestion[]) => {
-      const matches: ManualMatch[] = selectedPairs.map((s) => ({
-        indexA: s.indexA,
-        indexB: s.indexB,
-        keyA: s.keyA,
-        keyB: s.keyB,
-        rowA: capturedUniqueA[s.indexA]?.row ?? [],
-        rowB: capturedUniqueB[s.indexB]?.row ?? [],
-        similarity: s.similarity,
-      }));
-      setManualMatches(matches);
-      setManualStep("done");
-    },
-    [capturedUniqueA, capturedUniqueB]
-  );
-
-  const handleManualSkip = useCallback(() => {
-    setManualStep("done");
-    setManualMatches([]);
+  const handleManualConfirmed = useCallback((newMatches: ManualMatch[]) => {
+    setManualMatches((prev) => [...prev, ...newMatches]);
   }, []);
 
   const handleNewReconciliation = useCallback(() => {
@@ -257,9 +280,8 @@ function ReconcilePageInner() {
     setExcludeFooterA(0);
     setExcludeFooterB(0);
     setDeduplication(false);
-    setManualStep("none");
-    setSuggestions([]);
     setManualMatches([]);
+    setManualModalOpen(false);
     if (templateId) {
       router.replace("/protected/reconcile");
     }
@@ -275,21 +297,26 @@ function ReconcilePageInner() {
           fileB={parsedB}
           config={lastConfig}
           onNewReconciliation={handleNewReconciliation}
-          onManualReconciliation={handleStartManualReconciliation}
+          onBackToConfiguration={handleBackToConfiguration}
+          onManualReconciliation={handleOpenManualModal}
           manualMatches={manualMatches.length > 0 ? manualMatches : undefined}
-          manualStep={manualStep}
-          computeProgress={computeProgress}
+          remainingUniqueA={remaining.a.length}
+          remainingUniqueB={remaining.b.length}
         />
 
-        {manualStep === "selecting" && (
-          <ManualReconciliation
-            suggestions={suggestions}
-            uniqueA={capturedUniqueA}
-            uniqueB={capturedUniqueB}
-            onConfirm={handleManualConfirm}
-            onSkip={handleManualSkip}
-          />
-        )}
+        <ManualReconciliationModal
+          open={manualModalOpen}
+          onOpenChange={setManualModalOpen}
+          headersA={parsedA.headers}
+          headersB={parsedB.headers}
+          fileAName={parsedA.fileName}
+          fileBName={parsedB.fileName}
+          remainingA={remaining.a}
+          remainingB={remaining.b}
+          remainingOriginalIndexA={remaining.origA}
+          remainingOriginalIndexB={remaining.origB}
+          onConfirm={handleManualConfirmed}
+        />
       </div>
     );
   }
@@ -343,8 +370,8 @@ function ReconcilePageInner() {
             isLoading={isReconciling}
             deduplication={deduplication}
             onDeduplicationChange={setDeduplication}
-            initialConfig={appliedTemplate?.config}
-            warnings={appliedTemplate?.warnings}
+            initialConfig={configurationInitialState}
+            warnings={configurationWarnings}
           />
         );
       default:

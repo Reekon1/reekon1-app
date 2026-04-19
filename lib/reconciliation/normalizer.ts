@@ -143,9 +143,16 @@ export function buildKeyFromMappings(
       if (cols.length === 0) {
         throw new Error("KeyMapping has no columns for side " + side);
       }
-      return cols
-        .map((colIdx) => applyTransform(row[colIdx] ?? "", m.transform))
-        .join(m.separator);
+      const parts = cols.map((colIdx) => applyTransform(row[colIdx] ?? "", m.transform));
+      const perGap = side === "A" ? m.separatorsA : m.separatorsB;
+      if (perGap && perGap.length >= parts.length - 1) {
+        let joined = parts[0];
+        for (let i = 1; i < parts.length; i++) {
+          joined += perGap[i - 1] + parts[i];
+        }
+        return joined;
+      }
+      return parts.join(m.separator);
     })
     .join("\x1F");
 }
