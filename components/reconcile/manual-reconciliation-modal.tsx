@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,6 +50,83 @@ function SimilarityBadge({ value }: { value: number }) {
 function baseName(fileName?: string) {
   if (!fileName) return "";
   return fileName.replace(/\.[^/.]+$/, "");
+}
+
+function RowValues({
+  headers,
+  row,
+  tone,
+}: {
+  headers: string[];
+  row: string[];
+  tone: "blue" | "violet";
+}) {
+  const columns = headers.length > 0 ? headers : [""];
+  const toneClasses =
+    tone === "blue"
+      ? {
+          wrapper: "border-blue-200 bg-blue-50/20",
+          header: "border-blue-200 bg-blue-100/70 text-blue-950",
+          cell: "border-blue-100/80 bg-blue-50/10 text-blue-950",
+        }
+      : {
+          wrapper: "border-violet-200 bg-violet-50/20",
+          header: "border-violet-200 bg-violet-100/70 text-violet-950",
+          cell: "border-violet-100/80 bg-violet-50/10 text-violet-950",
+        };
+
+  return (
+    <div className={`inline-block max-w-full overflow-hidden rounded-md border align-top ${toneClasses.wrapper}`}>
+      <table className="w-max max-w-full border-collapse table-auto">
+        <thead>
+          <tr>
+            {columns.map((header, index) => (
+              <th
+                key={`header-${index}`}
+                className={`border px-2 py-1.5 text-left text-[11px] font-medium whitespace-nowrap ${toneClasses.header}`}
+              >
+                {header || `Col ${index + 1}`}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            {columns.map((_, index) => (
+              <td
+                key={`value-${index}`}
+                className={`max-w-[18rem] border px-2 py-1.5 text-xs align-top whitespace-normal break-words ${toneClasses.cell}`}
+                title={row[index] ?? ""}
+              >
+                {row[index] ?? ""}
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SourceCell({
+  name,
+  tone,
+}: {
+  name: string;
+  tone: "blue" | "violet";
+}) {
+  const toneClass =
+    tone === "blue"
+      ? "bg-blue-100/80 text-blue-900 border-blue-200"
+      : "bg-violet-100/80 text-violet-900 border-violet-200";
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium ${toneClass}`}
+    >
+      {name}
+    </span>
+  );
 }
 
 export function ManualReconciliationModal({
@@ -204,49 +281,27 @@ export function ManualReconciliationModal({
 
         {suggestions.length > 0 && (
           <div className="border rounded-md overflow-auto flex-1 min-h-0">
-            <table className="text-xs border-collapse">
+            <table className="min-w-full w-max text-xs border-collapse">
               <thead className="bg-muted/60 sticky top-0 z-10">
                 <tr>
                   <th
-                    rowSpan={2}
                     className="px-2 py-2 text-left font-medium border-b border-r bg-muted/60 sticky left-0 z-20 w-10"
                   ></th>
                   <th
-                    rowSpan={2}
                     className="px-3 py-2 text-left font-medium border-b border-r bg-muted/60 whitespace-nowrap"
                   >
                     %
                   </th>
                   <th
-                    colSpan={Math.max(headersA.length, 1)}
-                    className="px-3 py-1 text-left font-semibold border-b border-l bg-blue-50 text-blue-900"
+                    className="px-3 py-2 text-left font-medium border-b border-r bg-muted/60 whitespace-nowrap"
                   >
-                    {nameA}
+                    Source
                   </th>
                   <th
-                    colSpan={Math.max(headersB.length, 1)}
-                    className="px-3 py-1 text-left font-semibold border-b border-l bg-violet-50 text-violet-900"
+                    className="px-3 py-2 text-left font-medium border-b bg-muted/60"
                   >
-                    {nameB}
+                    Ligne
                   </th>
-                </tr>
-                <tr>
-                  {(headersA.length > 0 ? headersA : [""]).map((h, i) => (
-                    <th
-                      key={`ha-${i}`}
-                      className={`px-3 py-2 text-left font-medium border-b whitespace-nowrap bg-blue-50/70 text-blue-900 ${i === 0 ? "border-l" : ""}`}
-                    >
-                      {h || `Col ${i + 1}`}
-                    </th>
-                  ))}
-                  {(headersB.length > 0 ? headersB : [""]).map((h, i) => (
-                    <th
-                      key={`hb-${i}`}
-                      className={`px-3 py-2 text-left font-medium border-b whitespace-nowrap bg-violet-50/70 text-violet-900 ${i === 0 ? "border-l" : ""}`}
-                    >
-                      {h || `Col ${i + 1}`}
-                    </th>
-                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -261,44 +316,54 @@ export function ManualReconciliationModal({
                       ? "bg-muted/20"
                       : "";
                   return (
-                    <tr
-                      key={idx}
-                      className={`border-b last:border-0 ${disabled ? "opacity-50" : ""} ${rowBg}`}
-                    >
-                      <td
-                        className={`px-2 py-1.5 border-r sticky left-0 z-10 ${rowBg || "bg-background"}`}
+                    <Fragment key={idx}>
+                      <tr
+                        key={`suggestion-a-${idx}`}
+                        className={`border-b-0 ${disabled ? "opacity-50" : ""} ${rowBg}`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={disabled}
-                          onChange={() => toggleSelection(idx)}
-                          aria-disabled={disabled}
-                          className="h-4 w-4 rounded border-gray-300"
-                        />
-                      </td>
-                      <td className="px-3 py-1.5 border-r whitespace-nowrap">
-                        <SimilarityBadge value={s.similarity} />
-                      </td>
-                      {(headersA.length > 0 ? headersA : [""]).map((_, ci) => (
                         <td
-                          key={`ra-${ci}`}
-                          className={`px-3 py-1.5 max-w-[220px] truncate ${ci === 0 ? "border-l bg-blue-50/20" : "bg-blue-50/20"}`}
-                          title={rowA[ci] ?? ""}
+                          rowSpan={2}
+                          className={`px-2 py-3 align-top border-r sticky left-0 z-10 ${rowBg || "bg-background"}`}
                         >
-                          {rowA[ci] ?? ""}
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={disabled}
+                            onChange={() => toggleSelection(idx)}
+                            aria-disabled={disabled}
+                            className="h-4 w-4 rounded border-gray-300"
+                          />
                         </td>
-                      ))}
-                      {(headersB.length > 0 ? headersB : [""]).map((_, ci) => (
-                        <td
-                          key={`rb-${ci}`}
-                          className={`px-3 py-1.5 max-w-[220px] truncate ${ci === 0 ? "border-l bg-violet-50/20" : "bg-violet-50/20"}`}
-                          title={rowB[ci] ?? ""}
-                        >
-                          {rowB[ci] ?? ""}
+                        <td rowSpan={2} className="px-3 py-3 align-top border-r whitespace-nowrap">
+                          <SimilarityBadge value={s.similarity} />
                         </td>
-                      ))}
-                    </tr>
+                        <td className="px-3 py-3 align-top border-r whitespace-nowrap">
+                          <SourceCell name={nameA} tone="blue" />
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <RowValues
+                            headers={headersA}
+                            row={rowA}
+                            tone="blue"
+                          />
+                        </td>
+                      </tr>
+                      <tr
+                        key={`suggestion-b-${idx}`}
+                        className={`border-b last:border-b-0 ${disabled ? "opacity-50" : ""} ${rowBg}`}
+                      >
+                        <td className="px-3 py-3 align-top border-r whitespace-nowrap">
+                          <SourceCell name={nameB} tone="violet" />
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <RowValues
+                            headers={headersB}
+                            row={rowB}
+                            tone="violet"
+                          />
+                        </td>
+                      </tr>
+                    </Fragment>
                   );
                 })}
               </tbody>

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.0] - 2026-04-20
+
+### Features
+- feat: rapprochement manuel — chaque suggestion en deux lignes empilées (fichier A au-dessus, fichier B en dessous) avec colonnes serrées type Excel, source et similarité fusionnées
+
 ## [0.1.0] - 2026-04-19
 
 ### Features
